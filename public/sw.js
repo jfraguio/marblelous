@@ -5,7 +5,10 @@ const SHELL = ['./', './index.html', './manifest.webmanifest', './precache-manif
 
 async function precache(cache) {
   const extra = Array.isArray(self.__MARBLELOUS_PRECACHE) ? self.__MARBLELOUS_PRECACHE : [];
-  await cache.addAll([...new Set([...SHELL, ...extra])]);
+  const urls = [...new Set([...SHELL, ...extra])];
+  const work = Promise.all(urls.map((u) => cache.add(u).catch(() => {})));
+  // Nunca bloquear la instalación por un recurso lento o ausente.
+  await Promise.race([work, new Promise((resolve) => setTimeout(resolve, 6000))]);
 }
 
 self.addEventListener('install', (event) => {
