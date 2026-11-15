@@ -10,7 +10,6 @@ import type {
   Records,
   SaveData,
   Settings,
-  ShopItem,
   WorldData
 } from './types';
 import { AudioEngine } from './audio';
@@ -22,7 +21,6 @@ import {
   NOTE_COLORS,
   PALETTE,
   PIECE_BY_ID,
-  SHOP_BY_ID,
   SHOP_ITEMS,
   STARTING_OWNED,
   getPieceDef,
@@ -72,7 +70,8 @@ type History =
   | { type: 'move'; id: number; fromX: number; fromY: number; toX: number; toY: number }
   | { type: 'rotate'; id: number; from: number; to: number }
   | { type: 'size'; id: number; from: number; to: number }
-  | { type: 'color'; id: number; from: number; to: number };
+  | { type: 'color'; id: number; from: number; to: number }
+  | { type: 'clear'; pieces: Piece[] };
 
 export class Game {
   canvas: HTMLCanvasElement;
@@ -91,6 +90,7 @@ export class Game {
   alpha = 0;
 
   mode: Mode = 'build';
+  armedDefId = '';
   selectedPieceId = 0;
   selectedMarble = 'crystal';
   color = 0;
@@ -205,6 +205,7 @@ export class Game {
       }
       if (steps >= 12) this.accumulator = 0;
       this.updateEffects(raw, now);
+      this.updateBubbles(now);
       this.updateDrop(now);
       this.updateRecords(now);
       this.maybeSave(now);
@@ -324,14 +325,43 @@ export class Game {
   setMode(mode: Mode) {
     if (this.mode === mode) return;
     this.mode = mode;
+    this.armedDefId = '';
     this.selectedPieceId = 0;
     this.ghost = null;
     this.dropPreview = null;
     this.audio.ui();
-    if (mode === 'play' && this.tutorialStep === 1) this.advanceTutorial(2);
+    if (mode === 'play' && this.tutorialStep < 3) this.advanceTutorial(3);
     this.ui?.refreshTray();
     this.ui?.refreshMode();
     this.ui?.updateSelection();
+    document.body.classList.remove('armed');
+  }
+
+  armPiece(defId: string) {
+    if (!this.owned.has(defId)) return;
+    if (this.armedDefId === defId) {
+      this.disarmPiece();
+      return;
+    }
+    this.armedDefId = defId;
+    this.selectedPieceId = 0;
+    this.mode = 'build';
+    this.ghost = null;
+    this.dropPreview = null;
+    document.body.classList.add('armed');
+    this.audio.ui();
+    if (this.tutorialStep === 0) this.advanceTutorial(1);
+    this.ui?.refreshTray();
+    this.ui?.refreshMode();
+    this.ui?.updateSelection();
+  }
+
+  disarmPiece() {
+    if (!this.armedDefId) return;
+    this.armedDefId = '';
+    this.ghost = null;
+    document.body.classList.remove('armed');
+    this.ui?.refreshTray();
   }
 
   selectPiece(id: number) {
@@ -377,7 +407,7 @@ export class Game {
     this.selectPiece(p.id);
     this.updateBuildChallenges();
     this.ui?.refreshHud();
-    if (this.tutorialStep === 0) this.advanceTutorial(1);
+    if (this.tutorialStep === 1) this.advanceTutorial(2);
     return p;
   }
 
@@ -468,6 +498,68 @@ export class Game {
     }
   }
 
+  duplicatePiece(p: Piece): Piece | null {
+    if (this.pieces.length >= 2000) {
+      this.audio.error();
+      this.ui?.toast('info');
+      return null;
+    }
+    const size = p.defId === 'ramp' ? p.len : getPieceDef(p.defId).w;
+    const off = Math.max(66, size * 0.5 + 44);
+    const dx = Math.cos(p.rot) * off;
+    const dy = Math.sin(p.rot) * off;
+    const clone: Piece = {
+      ...p,
+      id: this.nextId++,
+      x: p.x + dx,
+      y: p.y + dy,
+      bornAt: performance.now(),
+      flash: undefined,
+      anim: undefined,
+      disabledUntil: undefined,
+      charge: undefined
+    };
+    this.pieces.push(clone);
+    this.physics.rebuild(this.pieces);
+    this.history.push({ type: 'add', piece: clone });
+    this.history = this.history.slice(-60);
+    this.redoStack.length = 0;
+    this.selectPiece(clone.id);
+    this.audio.impact('brick', 240, this.panForX(clone.x));
+    this.spawnBurst(clone.x, clone.y, PALETTE.yellow, 6, 0);
+    this.dirty = true;
+    this.requestSave();
+    this.updateBuildChallenges();
+    this.ui?.refreshHud();
+    return clone;
+  }
+
+  clearCanvas() {
+    if (this.pieces.length === 0 && this.marbles.length === 0) return;
+    this.history.push({ type: 'clear', pieces: this.pieces });
+    this.history = this.history.slice(-60);
+    this.redoStack.length = 0;
+    this.pieces = [];
+    this.worlds[this.activeWorld].pieces = this.pieces;
+    this.marbles = [];
+    this.particles = [];
+    this.popups = [];
+    this.selectedPieceId = 0;
+    this.armedDefId = '';
+    this.ghost = null;
+    this.dropPreview = null;
+    document.body.classList.remove('armed');
+    this.physics.rebuild(this.pieces);
+    this.physics.clearDisabled();
+    this.audio.impact('brick', 300, 0);
+    this.spawnBurst(this.camera.x, this.camera.y, PALETTE.muted, 12, 0);
+    this.dirty = true;
+    this.requestSave();
+    this.updateBuildChallenges();
+    this.ui?.refreshAll();
+    this.ui?.toast('trash');
+  }
+
   undo() {
     const h = this.history.pop();
     if (!h) return;
@@ -518,6 +610,8 @@ export class Game {
     } else if (h.type === 'color') {
       const p = this.pieces.find((x) => x.id === h.id);
       if (p) p.color = undo ? h.from : h.to;
+    } else if (h.type === 'clear') {
+      this.pieces = undo ? h.pieces : [];
     }
     this.selectedPieceId = 0;
     this.worlds[this.activeWorld].pieces = this.pieces;
@@ -526,7 +620,6 @@ export class Game {
     this.updateBuildChallenges();
     this.ui?.updateSelection();
     this.ui?.refreshTray();
-    this.ui?.refreshShopIfOpen();
   }
 
   // ---------------- marbles ----------------
@@ -557,7 +650,7 @@ export class Game {
     this.updateChallenge('marbles20', this.marbles.length);
     this.dropStats.maxSpeed = Math.max(this.dropStats.maxSpeed, 0);
     this.spawnBurst(x, y, type.color, 4, 0);
-    if (this.tutorialStep <= 2) this.advanceTutorial(3);
+    if (this.tutorialStep <= 3) this.advanceTutorial(4);
     this.dirty = true;
     return m;
   }
@@ -647,6 +740,11 @@ export class Game {
         this.audio.boost(pan);
         this.spawnBurst(e.x, e.y, PALETTE.teal, 3, 0);
         this.score(2, e.x, e.y, e.marbleId, now);
+      } else if (e.type === 'portal') {
+        this.audio.portal(pan);
+        this.spawnBurst(e.x, e.y, PALETTE.purple, 10, 1);
+        this.spawnBurst(e.x, e.y, PALETTE.teal, 6, 0);
+        this.score(5, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'loop') {
         if (!this.allow(`loop:${e.marbleId}:${e.pieceId}`, 2600, now)) continue;
         this.audio.loop(pan);
@@ -710,7 +808,6 @@ export class Game {
     this.spawnPopup(x, y - 14, `+${pts}`);
     this.dirty = true;
     this.ui?.refreshHud();
-    this.ui?.refreshShopIfOpen();
   }
 
   private updateRecords(now: number) {
@@ -752,6 +849,52 @@ export class Game {
       this.lastUiSave = now;
       this.ui?.refreshHud();
     }
+  }
+
+  private addBonus(points: number, x: number, y: number) {
+    this.currency += points;
+    this.lifetime += points;
+    this.dropStats.sparks += points;
+    this.spawnPopup(x, y - 16, `+${points}`);
+    this.ui?.refreshHud();
+    this.dirty = true;
+    this.requestSave();
+  }
+
+  private updateBubbles(now: number) {
+    for (const p of this.pieces) {
+      if (p.defId !== 'bubble') continue;
+      if (p.disabledUntil && p.disabledUntil > now) {
+        p.charge = 0;
+        continue;
+      }
+      let count = 0;
+      for (const m of this.marbles) {
+        if (!m.alive) continue;
+        if (Math.abs(m.x - p.x) < 120 && m.y < p.y + 12 && m.y > p.y - 190) count++;
+      }
+      p.charge = count;
+      if (count > 10) this.explodeBubble(p, now);
+    }
+  }
+
+  private explodeBubble(p: Piece, now: number) {
+    p.disabledUntil = now + 6000;
+    p.charge = 0;
+    this.physics.setPieceDisabled(p.id, now + 6000);
+    for (const m of this.marbles) {
+      if (!m.alive) continue;
+      if (Math.abs(m.x - p.x) < 150 && m.y < p.y + 24 && m.y > p.y - 220) {
+        m.vy += 90;
+        m.awake = true;
+        m.sleepTimer = 0;
+      }
+    }
+    this.audio.bubble(this.panForX(p.x));
+    this.spawnBurst(p.x, p.y - 20, '#8FD3EE', 24, 1);
+    this.spawnBurst(p.x, p.y - 20, PALETTE.teal, 12, 0);
+    this.addBonus(40, p.x, p.y - 20);
+    this.ui?.flash(0.14);
   }
 
   private updateDrop(now: number) {
@@ -917,47 +1060,10 @@ export class Game {
     this.dirty = true;
   }
 
-  // ---------------- shop / economy ----------------
+  // ---------------- economy / rewards ----------------
 
   isOwned(id: string) {
     return this.owned.has(id);
-  }
-
-  buy(id: string) {
-    const item = SHOP_BY_ID.get(id);
-    if (!item) return false;
-    if (this.owned.has(id)) return true;
-    if (this.currency < item.price) {
-      this.audio.error();
-      return false;
-    }
-    this.currency -= item.price;
-    this.owned.add(id);
-    this.audio.purchase();
-    this.spawnBurst(this.camera.x, this.camera.y, PALETTE.yellow, 10, 1);
-    if (item.kind === 'marble') this.selectedMarble = id;
-    if (item.kind === 'piece' && this.mode === 'play') this.setMode('build');
-    this.dirty = true;
-    this.requestSave();
-    this.ui?.refreshHud();
-    this.ui?.refreshTray();
-    this.ui?.revealTrayItem(id);
-    this.ui?.refreshShop();
-    this.ui?.toast('spark', `-${item.price}`);
-    this.tutorialShopVisited();
-    return true;
-  }
-
-  affordableCount() {
-    let n = 0;
-    for (const item of SHOP_ITEMS) {
-      if (!this.owned.has(item.id) && item.price > 0 && item.price <= this.currency) n++;
-    }
-    return n;
-  }
-
-  hasAffordable() {
-    return this.affordableCount() > 0;
   }
 
   // ---------------- tutorial ----------------
@@ -974,10 +1080,6 @@ export class Game {
       this.requestSave();
       this.ui?.updateTutorial();
     }
-  }
-
-  tutorialShopVisited() {
-    if (this.tutorialStep === 3) this.advanceTutorial(4);
   }
 
   skipTutorial() {
@@ -1076,8 +1178,12 @@ export class Game {
     this.particles = [];
     this.popups = [];
     this.selectedPieceId = 0;
+    this.armedDefId = '';
+    this.ghost = null;
+    this.dropPreview = null;
     this.history.length = 0;
     this.redoStack.length = 0;
+    this.physics.clearDisabled();
     this.nextId = Math.max(0, ...this.pieces.map((p) => p.id)) + 1;
     this.physics.rebuild(this.pieces);
     this.dirty = true;
@@ -1203,7 +1309,7 @@ export class Game {
       });
     }
     const owned = new Set<string>(STARTING_OWNED);
-    for (const id of data.owned ?? []) if (SHOP_BY_ID.has(id)) owned.add(id);
+    for (const id of data.owned ?? []) if (PIECE_BY_ID.has(id) || MARBLE_BY_ID.has(id)) owned.add(id);
     return {
       v: 1,
       updatedAt: Date.now(),

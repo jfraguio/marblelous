@@ -178,7 +178,7 @@ export class Renderer {
   }
 
   private drawWorldPiece(ctx: CanvasRenderingContext2D, p: Piece, now: number, zoom: number) {
-    if (p.defId === 'star' && p.disabledUntil && p.disabledUntil > now) return;
+    if ((p.defId === 'star' || p.defId === 'bubble') && p.disabledUntil && p.disabledUntil > now) return;
     ctx.save();
     ctx.translate(p.x, p.y);
     if (p.bornAt) {
@@ -246,6 +246,45 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(0, 0, 27 + Math.sin(now * 0.005) * 2, 0, TAU);
       ctx.fill();
+    }
+
+    if (p.defId === 'bubble') {
+      const n = Math.min(10, p.charge ?? 0);
+      for (let i = 0; i < 10; i++) {
+        ctx.fillStyle = i < n ? 'rgba(233,180,76,0.95)' : 'rgba(35,33,28,0.16)';
+        ctx.beginPath();
+        ctx.arc(-45 + i * 10, -24, 3, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    if (p.defId === 'portal') {
+      for (const x of [-62, 62]) {
+        ctx.save();
+        ctx.translate(x, 0);
+        ctx.rotate(now * 0.0012 * (x < 0 ? 1 : -1));
+        ctx.strokeStyle = rgba(PALETTE.paper3, 0.55);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 19, 0.2, 2.4);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    if (p.defId === 'fan') {
+      const off = (now * 0.09) % 56;
+      ctx.strokeStyle = rgba(PALETTE.teal, 0.55);
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      for (let i = -2; i <= 2; i++) {
+        const y = -90 + ((i * 56 + off) % 180);
+        ctx.beginPath();
+        ctx.moveTo(-10, y + 8);
+        ctx.lineTo(0, y);
+        ctx.lineTo(10, y + 8);
+        ctx.stroke();
+      }
     }
 
     if (p.flash) {

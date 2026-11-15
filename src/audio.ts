@@ -341,6 +341,22 @@ export class AudioEngine {
     this.tone(380, 0.18, 0.025, panX, 'sine', 720);
   }
 
+  portal(panX: number) {
+    if (this.level === 0) return;
+    this.ensure();
+    this.noiseBurst(0.34, 1700, 0.05, panX, 'bandpass');
+    this.tone(260, 0.3, 0.04, panX, 'sine', 880);
+    this.tone(780, 0.26, 0.022, panX, 'triangle', 1400);
+  }
+
+  bubble(panX: number) {
+    if (this.level === 0) return;
+    this.ensure();
+    this.noiseBurst(0.1, 1400, 0.07, panX, 'bandpass');
+    this.tone(260, 0.2, 0.08, panX, 'sine', 760);
+    this.tone(620, 0.16, 0.035, panX, 'triangle', 980);
+  }
+
   loop(panX: number) {
     if (this.level === 0) return;
     this.ensure();

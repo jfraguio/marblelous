@@ -28,6 +28,7 @@ export interface Piece {
   flashNote?: number;
   anim?: number;
   disabledUntil?: number;
+  charge?: number;
   bornAt?: number;
 }
 
@@ -46,6 +47,7 @@ export interface Collider {
   conveyor: number;
   cannon: number;
   bumper: number;
+  bubble: number;
   chime: number;
   /** local tangent for conveyor, already in world space */
   tx: number;
@@ -55,7 +57,7 @@ export interface Collider {
   uy: number;
 }
 
-export type TriggerKind = 'goal' | 'star' | 'boost' | 'magnet' | 'portal';
+export type TriggerKind = 'goal' | 'star' | 'boost' | 'magnet' | 'portal' | 'fan';
 
 export interface Trigger {
   kind: TriggerKind;
@@ -118,6 +120,8 @@ export interface Marble {
   lastCannonPiece: number;
   lastBoost: number;
   lastBoostPiece: number;
+  lastPortalAt: number;
+  lastPortalPiece: number;
   loopData: Map<number, { last: number; total: number; awarded: boolean; out: number }>;
 }
 
@@ -147,6 +151,7 @@ export interface PhysEvent {
     | 'goal'
     | 'star'
     | 'boost'
+    | 'portal'
     | 'air'
     | 'marble';
   x: number;

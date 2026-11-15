@@ -942,3 +942,5 @@ button:focus-visible {
     transform: none;
   }
 }
+
+body.armed #game { cursor: crosshair; }

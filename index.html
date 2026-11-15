@@ -20,10 +20,10 @@
 
     <div id="hud" aria-live="off">
       <header class="topbar">
-        <button id="currency" class="chip" aria-label="Chispas">
+        <div id="currency" class="chip" aria-label="Chispas">
           <svg class="ic"><use href="#i-spark"></use></svg>
           <span id="sparks" class="num">0</span>
-        </button>
+        </div>
 
         <div id="combo" class="combo is-hidden" aria-label="Combo">
           <div class="combo-ring"><span id="combo-mult">×1</span></div>
@@ -58,6 +58,7 @@
         <button class="sel-btn" id="sel-rotate" aria-label="Rotar pieza"><svg class="ic"><use href="#i-rotate"></use></svg></button>
         <button class="sel-btn is-hidden" id="sel-size" aria-label="Cambiar longitud"><svg class="ic"><use href="#i-resize"></use></svg></button>
         <button class="sel-btn is-hidden color-btn" id="sel-color" aria-label="Cambiar color"><span></span></button>
+        <button class="sel-btn" id="sel-duplicate" aria-label="Duplicar pieza"><svg class="ic"><use href="#i-copy"></use></svg></button>
         <button class="sel-btn danger" id="sel-delete" aria-label="Borrar pieza"><svg class="ic"><use href="#i-trash"></use></svg></button>
       </div>
 
@@ -74,17 +75,6 @@
     </div>
 
     <!-- Overlays -->
-    <section id="shop" class="overlay is-hidden" role="dialog" aria-modal="true" aria-label="Tienda">
-      <div class="sheet">
-        <header class="sheet-head">
-          <div class="tabs" id="shop-tabs"></div>
-          <div class="sheet-currency"><svg class="ic"><use href="#i-spark"></use></svg><span id="shop-sparks">0</span></div>
-          <button class="ibtn close" data-close="shop" aria-label="Cerrar"><svg class="ic"><use href="#i-close"></use></svg></button>
-        </header>
-        <div id="shop-grid" class="shop-grid"></div>
-      </div>
-    </section>
-
     <section id="challenges" class="overlay is-hidden" role="dialog" aria-modal="true" aria-label="Retos">
       <div class="sheet">
         <header class="sheet-head">
@@ -142,6 +132,7 @@
       <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4.5 5L19 7"/></symbol>
       <symbol id="i-resize" viewBox="0 0 24 24"><path d="M4 12h16M7 8l-3 4 3 4M17 8l3 4-3 4"/></symbol>
       <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M20 8V3l-2 2"/><path d="M20 3a9 9 0 1 0 1 9"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
       <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></symbol>
       <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
       <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M10 20v-6h4v6"/></symbol>

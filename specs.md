@@ -11,6 +11,8 @@
 | Estado | **Pendiente de aprobación.** No se ha escrito código de producción. |
 | Autor | Equipo de diseño/ingeniería |
 
+> **Actualización v1.1 (implementada).** El juego ya no tiene tienda: todas las piezas y canicas están disponibles desde el inicio. La colocación es de dos toques (pieza de la bandeja → lienzo), con botón flotante de duplicado. Se añadieron caída en espiral musical, burbujas que estallan con más de 10 canicas, portales dobles, ventilador de aire y propulsión reforzada. “Borrar canvas” sustituye al reinicio de progreso. Las secciones de tienda y economía de compra del resto del documento quedan superadas por esta nota; el resto sigue vigente como referencia de diseño.
+
 > **Cómo leer este documento.** Las secciones 1–6 describen el producto (qué se juega y cómo se siente). Las secciones 7–12 describen la implementación (cómo se construye y se optimiza). Las secciones 13–18 son compatibilidad, calidad, privacidad, riesgos, plan y decisiones pendientes. Todo lo marcado como **[decisión abierta]** necesita tu visto bueno antes de implementar.
 
 ---

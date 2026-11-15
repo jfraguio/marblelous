@@ -3,7 +3,7 @@ import { LOOP_RADIUS, buildPiece, getPieceDef } from './pieces';
 import { clamp, shortAngle, TAU } from './util';
 
 const CELL = 64;
-const MAX_SPEED = 2800;
+const MAX_SPEED = 3400;
 const GRAVITY = 1800;
 const SLOP = 0.5;
 
@@ -34,6 +34,7 @@ export class PhysicsWorld {
   loops: LoopInfo[] = [];
   events: PhysEvent[] = [];
   private grid = new Map<number, number[]>();
+  private disabled = new Map<number, number>();
   private visited = new Uint32Array(0);
   private stamp = 0;
 
@@ -80,6 +81,14 @@ export class PhysicsWorld {
 
   clearEvents() {
     this.events.length = 0;
+  }
+
+  setPieceDisabled(id: number, until: number) {
+    this.disabled.set(id, until);
+  }
+
+  clearDisabled() {
+    this.disabled.clear();
   }
 
   update(marbles: Marble[], dt: number, now: number) {
@@ -156,8 +165,8 @@ export class PhysicsWorld {
         m.vx += t.dx * t.power * h;
         m.vy += t.dy * t.power * h;
         const sp = Math.hypot(m.vx, m.vy);
-        if (sp > 2600) {
-          const k = 2600 / sp;
+        if (sp > 3300) {
+          const k = 3300 / sp;
           m.vx *= k;
           m.vy *= k;
         }
@@ -174,6 +183,16 @@ export class PhysicsWorld {
             marbleId: m.id,
             speed: sp
           });
+        }
+      } else if (t.kind === 'fan') {
+        if (!this.inTriggerRect(m, t)) continue;
+        m.vx += t.dx * t.power * h;
+        m.vy += t.dy * t.power * h;
+        const sp = Math.hypot(m.vx, m.vy);
+        if (sp > 3300) {
+          const k = 3300 / sp;
+          m.vx *= k;
+          m.vy *= k;
         }
       } else if (t.kind === 'magnet') {
         const dx = t.x - m.x;
@@ -221,6 +240,31 @@ export class PhysicsWorld {
           t.disabledUntil = now + 5000;
           return;
         }
+      } else if (t.kind === 'portal') {
+        if (!this.inTriggerCircle(m, t)) continue;
+        if (now - m.lastPortalAt < 350) continue;
+        const partner = this.triggers.find((x) => x !== t && x.kind === 'portal' && x.pairId === t.pairId);
+        if (!partner) continue;
+        const sp = Math.hypot(m.vx, m.vy);
+        let nx = sp > 1 ? m.vx / sp : 1;
+        let ny = sp > 1 ? m.vy / sp : 0;
+        m.x = partner.x + nx * 46;
+        m.y = partner.y + ny * 46;
+        m.px = m.x;
+        m.py = m.y;
+        m.lastPortalAt = now;
+        m.lastPortalPiece = t.pieceId;
+        this.events.push({
+          type: 'portal',
+          x: partner.x,
+          y: partner.y,
+          pieceId: t.pieceId,
+          note: -1,
+          impact: 0,
+          marbleId: m.id,
+          speed: sp
+        });
+        return;
       }
     }
   }
@@ -270,6 +314,7 @@ export class PhysicsWorld {
   }
 
   private collideStatic(m: Marble, c: Collider, dt: number, now: number) {
+    if (c.bubble && (this.disabled.get(c.pieceId) ?? 0) > now) return;
     const p = closestOnSegment(m.x, m.y, c.ax, c.ay, c.bx, c.by);
     let nx = m.x - p.x;
     let ny = m.y - p.y;
@@ -371,7 +416,7 @@ export class PhysicsWorld {
         marbleId: m.id,
         speed: Math.hypot(m.vx, m.vy)
       });
-    } else if (c.mat === 'rubber' && impact > 90) {
+    } else if (c.mat === 'rubber' && !c.bubble && impact > 90) {
       this.events.push({
         type: 'trampoline',
         x: m.x,
@@ -593,6 +638,8 @@ export function createMarble(
     lastCannonPiece: 0,
     lastBoost: -1000,
     lastBoostPiece: 0,
+    lastPortalAt: -1000,
+    lastPortalPiece: 0,
     loopData: new Map()
   };
 }

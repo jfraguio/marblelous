@@ -13,6 +13,7 @@ import {
   RAMP_CURVE_END,
   RAMP_CURVE_RADIUS,
   RAMP_CURVE_START,
+  SPIRAL_POINTS,
   getPieceDef,
   xyloLayout
 } from './pieces';
@@ -86,6 +87,10 @@ function colorFor(p: Piece): string {
   if (p.defId === 'goal') return PALETTE.yellow;
   if (p.defId === 'star') return PALETTE.yellow;
   if (p.defId === 'magnet') return PALETTE.red;
+  if (p.defId === 'spiral') return PALETTE.teal;
+  if (p.defId === 'bubble') return '#8FD3EE';
+  if (p.defId === 'portal') return PALETTE.purple;
+  if (p.defId === 'fan') return PALETTE.teal;
   if (d.tintable) return COLORS[p.color] ?? COLORS[d.defaultColor] ?? PALETTE.blue;
   return COLORS[d.defaultColor] ?? PALETTE.blue;
 }
@@ -111,6 +116,14 @@ function spriteDims(p: Piece): { w: number; h: number } {
     }
     case 'magnet':
       return { w: 360, h: 360 };
+    case 'spiral':
+      return { w: 300, h: 260 };
+    case 'bubble':
+      return { w: 228, h: 44 };
+    case 'portal':
+      return { w: 260, h: 120 };
+    case 'fan':
+      return { w: 124, h: 232 };
     case 'goal':
       return { w: 126, h: 126 };
     case 'star':
@@ -528,6 +541,150 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.beginPath();
       ctx.arc(-9, -11, 22, Math.PI * 1.0, Math.PI * 1.55);
       ctx.stroke();
+    } else if (p.defId === 'spiral') {
+      const path = () => {
+        ctx.beginPath();
+        ctx.moveTo(SPIRAL_POINTS[0].x, SPIRAL_POINTS[0].y);
+        for (let i = 1; i < SPIRAL_POINTS.length; i++) ctx.lineTo(SPIRAL_POINTS[i].x, SPIRAL_POINTS[i].y);
+      };
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.save();
+      ctx.translate(1.5, 3);
+      path();
+      ctx.strokeStyle = PALETTE.shadow;
+      ctx.lineWidth = 8;
+      ctx.stroke();
+      ctx.restore();
+      path();
+      ctx.strokeStyle = 'rgba(46,158,151,0.34)';
+      ctx.lineWidth = 6;
+      ctx.stroke();
+      path();
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      for (let i = 0; i < SPIRAL_POINTS.length; i += 8) {
+        const x = SPIRAL_POINTS[i].x;
+        const y = SPIRAL_POINTS[i].y;
+        const col = NOTE_COLORS[(i / 8) % 8] ?? PALETTE.teal;
+        ctx.fillStyle = PALETTE.shadow;
+        ctx.beginPath();
+        ctx.arc(x + 1, y + 3, 11, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = shade(col, -0.2);
+        ctx.beginPath();
+        ctx.arc(x, y, 10, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(x - 1, y - 1, 7.5, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.65)';
+        ctx.beginPath();
+        ctx.arc(x - 3, y - 4, 2.6, 0, TAU);
+        ctx.fill();
+      }
+    } else if (p.defId === 'bubble') {
+      ctx.save();
+      ctx.fillStyle = PALETTE.shadow;
+      rr(ctx, -94, -4, 192, 26, 13);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(143,211,238,0.78)';
+      rr(ctx, -96, -8, 192, 24, 12);
+      ctx.fill();
+      ctx.strokeStyle = '#2E9E97';
+      ctx.lineWidth = 2.8;
+      rr(ctx, -96, -8, 192, 24, 12);
+      ctx.stroke();
+      for (let i = -4; i <= 4; i++) {
+        const x = i * 20;
+        const y = -10 - (i % 2 === 0 ? 4 : 0);
+        ctx.fillStyle = 'rgba(255,253,248,0.72)';
+        ctx.beginPath();
+        ctx.arc(x, y + 8, 11.5, 0, TAU);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(46,158,151,0.95)';
+        ctx.lineWidth = 1.9;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.beginPath();
+        ctx.arc(x - 3, y + 4, 3.2, 0, TAU);
+        ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(46,158,151,0.55)';
+      rr(ctx, -88, 9, 176, 3, 1.5);
+      ctx.fill();
+      ctx.restore();
+    } else if (p.defId === 'portal') {
+      const ring = (x: number, col: string) => {
+        ctx.save();
+        ctx.translate(x, 0);
+        ctx.fillStyle = PALETTE.shadow;
+        ctx.beginPath();
+        ctx.arc(1, 3, 32, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = rgba(col, 0.18);
+        ctx.beginPath();
+        ctx.arc(0, 0, 33, 0, TAU);
+        ctx.fill();
+        ctx.strokeStyle = shade(col, -0.26);
+        ctx.lineWidth = 9;
+        ctx.beginPath();
+        ctx.arc(0, 0, 27, 0, TAU);
+        ctx.stroke();
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(0, 0, 27, 0, TAU);
+        ctx.stroke();
+        ctx.strokeStyle = rgba('#ffffff', 0.55);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(-7, -8, 19, Math.PI * 0.9, Math.PI * 1.5);
+        ctx.stroke();
+        ctx.strokeStyle = rgba(PALETTE.teal, 0.75);
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.arc(0, 0, 15, -0.4, 2.1);
+        ctx.stroke();
+        ctx.restore();
+      };
+      ring(-62, PALETTE.purple);
+      ring(62, PALETTE.teal);
+      ctx.strokeStyle = 'rgba(35,33,28,0.18)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 6]);
+      ctx.beginPath();
+      ctx.moveTo(-33, 0);
+      ctx.quadraticCurveTo(0, -25, 33, 0);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (p.defId === 'fan') {
+      ctx.fillStyle = 'rgba(46,158,151,0.12)';
+      rr(ctx, -48, -104, 96, 208, 24);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(46,158,151,0.5)';
+      ctx.lineWidth = 2;
+      rr(ctx, -48, -104, 96, 208, 24);
+      ctx.stroke();
+      ctx.strokeStyle = PALETTE.teal;
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      for (let i = -1; i <= 1; i++) {
+        const y = 40 + i * 34;
+        ctx.beginPath();
+        ctx.moveTo(-20, y + 10);
+        ctx.lineTo(0, y - 8);
+        ctx.lineTo(20, y + 10);
+        ctx.stroke();
+      }
+      ctx.fillStyle = shade(PALETTE.teal, -0.2);
+      rr(ctx, -52, 82, 104, 24, 10);
+      ctx.fill();
+      ctx.fillStyle = PALETTE.teal;
+      rr(ctx, -44, 76, 88, 16, 8);
+      ctx.fill();
     } else if (p.defId === 'xylo3' || p.defId === 'xylo5' || p.defId === 'xylo8') {
       const n = p.defId === 'xylo3' ? 3 : p.defId === 'xylo5' ? 5 : 8;
       const layout = xyloLayout(n);
@@ -698,7 +855,7 @@ export function drawPreview(canvas: HTMLCanvasElement, itemId: string, kind: 'pi
   const s = getPieceSprite(p);
   // Las piezas muy anchas (xilófonos) se recortan por los lados para que sus
   // láminas se lean; el resto se muestra completo.
-  const scale = itemId.startsWith('xylo')
+  const scale = itemId.startsWith('xylo') || itemId === 'bubble' || itemId === 'conveyor'
     ? Math.min((ch - 14) / s.h, 2.2)
     : Math.min((cw - 16) / s.w, (ch - 14) / s.h, 2.2);
   ctx.drawImage(s.canvas, cw / 2 - (s.w * scale) / 2, ch / 2 - (s.h * scale) / 2, s.w * scale, s.h * scale);

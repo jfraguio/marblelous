@@ -31,6 +31,13 @@ type Single =
       camX: number;
       camY: number;
     }
+  | {
+      type: 'place';
+      pointerId: number;
+      defId: string;
+      start: Screen;
+      world: Screen;
+    }
   | null;
 
 interface Pinch {
@@ -40,15 +47,6 @@ interface Pinch {
   worldAtMid: Screen;
 }
 
-interface TrayDrag {
-  pointerId: number;
-  defId: string;
-  kind: 'piece' | 'marble';
-  start: Screen;
-  started: boolean;
-  card: HTMLElement;
-}
-
 export class Input {
   private game: Game;
   private ui: UI;
@@ -56,7 +54,6 @@ export class Input {
   private pointers = new Map<number, Screen>();
   private single: Single = null;
   private pinch: Pinch | null = null;
-  private trayDrag: TrayDrag | null = null;
   private lastTouchAt = 0;
 
   constructor(canvas: HTMLCanvasElement, game: Game, ui: UI) {
@@ -64,7 +61,6 @@ export class Input {
     this.game = game;
     this.ui = ui;
     this.bindCanvas();
-    this.bindTray();
     this.bindKeys();
   }
 
@@ -89,97 +85,6 @@ export class Input {
     );
   }
 
-  private bindTray() {
-    this.ui.tray.addEventListener('pointerdown', (e) => {
-      if (this.game.overlayOpen) return;
-      const target = (e.target as HTMLElement).closest('.card') as HTMLElement | null;
-      if (!target) return;
-      const kind = target.dataset.kind;
-      if (kind !== 'piece' && kind !== 'marble') return;
-      const id = target.dataset.id;
-      if (!id) return;
-      if (!this.game.owned.has(id)) return;
-      this.cancelTray();
-      this.trayDrag = {
-        pointerId: e.pointerId,
-        defId: id,
-        kind,
-        start: { x: e.clientX, y: e.clientY },
-        started: false,
-        card: target
-      };
-      target.classList.add('is-active');
-      this.unlockAudio();
-      window.addEventListener('pointermove', this.onTrayMove, { passive: false });
-      window.addEventListener('pointerup', this.onTrayUp, { passive: false });
-      window.addEventListener('pointercancel', this.onTrayCancel, { passive: false });
-    });
-  }
-
-  private onTrayMove = (e: PointerEvent) => {
-    const d = this.trayDrag;
-    if (!d || d.pointerId !== e.pointerId) return;
-    const dx = e.clientX - d.start.x;
-    const dy = e.clientY - d.start.y;
-    if (!d.started) {
-      if (Math.abs(dy) > 9) {
-        d.started = true;
-      } else if (Math.abs(dx) > 22) {
-        this.cancelTray();
-        return;
-      } else {
-        return;
-      }
-    }
-    const w = this.game.screenToWorld(e.clientX, e.clientY);
-    if (d.kind === 'piece') {
-      this.game.ghost = { kind: 'piece', defId: d.defId, x: Math.round(w.x / 20) * 20, y: Math.round(w.y / 20) * 20, rot: 0 };
-    } else {
-      this.game.ghost = { kind: 'marble', typeId: d.defId, x: w.x, y: w.y };
-    }
-  };
-
-  private onTrayUp = (e: PointerEvent) => {
-    const d = this.trayDrag;
-    if (!d || d.pointerId !== e.pointerId) return;
-    const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-    const overCanvas = el === this.canvas || el?.id === 'app';
-    if (d.started && overCanvas) {
-      const w = this.game.screenToWorld(e.clientX, e.clientY);
-      if (e.clientY < window.innerHeight - 96) {
-        if (d.kind === 'piece') {
-          const p = this.game.addPiece(d.defId, Math.round(w.x / 20) * 20, Math.round(w.y / 20) * 20, 0);
-          if (p) this.game.selectPiece(p.id);
-        } else {
-          this.game.spawnMarble(w.x, w.y, d.defId);
-        }
-      }
-    } else if (!d.started && d.kind === 'marble') {
-      const type = d.defId;
-      if (this.game.owned.has(type)) {
-        this.game.selectedMarble = type;
-        this.game.audio.ui();
-        this.ui.refreshTray();
-      }
-    }
-    this.cancelTray();
-  };
-
-  private onTrayCancel = () => {
-    this.cancelTray();
-  };
-
-  private cancelTray() {
-    if (this.trayDrag) {
-      this.trayDrag.card.classList.remove('is-active');
-      this.trayDrag = null;
-    }
-    this.game.ghost = null;
-    window.removeEventListener('pointermove', this.onTrayMove);
-    window.removeEventListener('pointerup', this.onTrayUp);
-    window.removeEventListener('pointercancel', this.onTrayCancel);
-  }
-
   private unlockAudio() {
     void this.game.audio.unlock();
   }
@@ -189,7 +94,6 @@ export class Input {
     if (this.pointers.size >= 2) return;
     e.preventDefault();
     this.unlockAudio();
-    this.cancelTray();
     this.lastTouchAt = performance.now();
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
@@ -206,6 +110,23 @@ export class Input {
     if (this.pointers.size > 2) return;
 
     const world = this.game.screenToWorld(e.clientX, e.clientY);
+    if (this.game.mode === 'build' && this.game.armedDefId) {
+      this.single = {
+        type: 'place',
+        pointerId: e.pointerId,
+        defId: this.game.armedDefId,
+        start: { x: e.clientX, y: e.clientY },
+        world
+      };
+      this.game.ghost = {
+        kind: 'piece',
+        defId: this.game.armedDefId,
+        x: Math.round(world.x / 20) * 20,
+        y: Math.round(world.y / 20) * 20,
+        rot: 0
+      };
+      return;
+    }
     if (this.game.mode === 'play') {
       const rainTimer = window.setTimeout(() => {
         if (!this.single || this.single.type !== 'drop' || this.single.moved) return;
@@ -297,6 +218,16 @@ export class Input {
         if (p) this.game.movePieceTo(p, w.x, w.y - 18 / this.game.camera.zoom);
         this.ui.updateSelection();
       }
+    } else if (s.type === 'place') {
+      const w = this.game.screenToWorld(e.clientX, e.clientY);
+      s.world = w;
+      this.game.ghost = {
+        kind: 'piece',
+        defId: s.defId,
+        x: Math.round(w.x / 20) * 20,
+        y: Math.round(w.y / 20) * 20,
+        rot: 0
+      };
     } else if (s.type === 'pan') {
       this.game.camera.x = s.camX - dx / this.game.camera.zoom;
       this.game.camera.y = s.camY - dy / this.game.camera.zoom;
@@ -329,6 +260,12 @@ export class Input {
       } else if (s.type === 'piece') {
         const p = this.game.pieces.find((x) => x.id === s.pieceId);
         if (p && s.moved) this.game.endMove(p, s.fromX, s.fromY);
+      } else if (s.type === 'place') {
+        if (e.clientY < window.innerHeight - 96) {
+          const w = s.world;
+          this.game.addPiece(s.defId, Math.round(w.x / 20) * 20, Math.round(w.y / 20) * 20, 0);
+        }
+        this.game.ghost = null;
       }
       this.single = null;
     }
@@ -349,6 +286,7 @@ export class Input {
           this.game.physics.rebuild(this.game.pieces);
         }
       }
+      if (this.single.type === 'place') this.game.ghost = null;
       this.single = null;
     }
     this.pointers.delete(e.pointerId);
@@ -368,6 +306,8 @@ export class Input {
         p.y = s.fromY;
         this.game.physics.rebuild(this.game.pieces);
       }
+    } else if (this.single?.type === 'place') {
+      this.game.ghost = null;
     }
     this.single = null;
     this.game.dropPreview = null;
@@ -384,7 +324,6 @@ export class Input {
       startMid: mid,
       worldAtMid: this.game.screenToWorld(mid.x, mid.y)
     };
-    this.cancelTray();
     this.game.ghost = null;
     this.game.dropPreview = null;
   }
@@ -410,7 +349,8 @@ export class Input {
       }
       const k = e.key;
       if (k === 'Escape') {
-        this.game.deselect();
+        if (this.game.armedDefId) this.game.disarmPiece();
+        else this.game.deselect();
         return;
       }
       if ((e.metaKey || e.ctrlKey) && k.toLowerCase() === 'z') {

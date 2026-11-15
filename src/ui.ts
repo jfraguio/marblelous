@@ -1,11 +1,10 @@
-import type { ChallengeDef, DropSummary, ShopCategory } from './types';
+import type { ChallengeDef, DropSummary } from './types';
 import type { Game } from './game';
 import { CHALLENGES } from './game';
 import {
   COLORS,
   MARBLE_BY_ID,
   PIECE_BY_ID,
-  SHOP_BY_ID,
   SHOP_ITEMS,
   getPieceDef,
   pieceHitSize,
@@ -17,7 +16,7 @@ import { clamp, fmt, icon, shortAngle } from './util';
 const $ = <T extends Element = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const $$ = (sel: string) => Array.from(document.querySelectorAll(sel)) as HTMLElement[];
 
-type OverlayId = 'shop' | 'challenges' | 'settings' | 'pause';
+type OverlayId = 'challenges' | 'settings' | 'pause';
 
 export class UI {
   game: Game;
@@ -36,15 +35,12 @@ export class UI {
   selRotate = $('#sel-rotate');
   selSize = $('#sel-size');
   selColor = $('#sel-color');
+  selDuplicate = $('#sel-duplicate');
   selDelete = $('#sel-delete');
   capacity = $('#capacity');
   capacityNum = $('#capacity-num');
   tutorial = $('#tutorial');
   tutorialSkip = $('#tutorial-skip');
-  shop = $('#shop');
-  shopGrid = $('#shop-grid');
-  shopTabs = $('#shop-tabs');
-  shopSparks = $('#shop-sparks');
   challenges = $('#challenges');
   challengeGrid = $('#challenge-grid');
   chSparks = $('#ch-sparks');
@@ -55,8 +51,6 @@ export class UI {
   summaryEl = $('#summary');
   flashEl = $('#flash');
 
-  private shopTab: ShopCategory = 'build';
-  private selectedShopId = '';
   private toastTimer = 0;
   private summaryTimer = 0;
   private tutorialTimer = 0;
@@ -73,7 +67,6 @@ export class UI {
   constructor(game: Game) {
     this.game = game;
     this.bind();
-    this.buildShopTabs();
     this.refreshAll();
   }
 
@@ -104,13 +97,9 @@ export class UI {
       this.game.cycleSound();
       this.refreshHud();
     });
-    this.currency.addEventListener('click', () => this.openOverlay('shop'));
 
     $$('.close').forEach((btn) => {
       btn.addEventListener('click', () => this.closeOverlays());
-    });
-    this.shop.addEventListener('pointerdown', (e) => {
-      if (e.target === this.shop) this.closeOverlays();
     });
     this.challenges.addEventListener('pointerdown', (e) => {
       if (e.target === this.challenges) this.closeOverlays();
@@ -139,6 +128,14 @@ export class UI {
         this.refreshAll();
       }
     });
+    this.selDuplicate.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const p = this.game.selectedPiece;
+      if (p) {
+        this.game.duplicatePiece(p);
+        this.updateSelection();
+      }
+    });
     this.selColor.addEventListener('click', (e) => {
       e.stopPropagation();
       const p = this.game.selectedPiece;
@@ -154,9 +151,8 @@ export class UI {
       e.stopPropagation();
       const p = this.game.selectedPiece;
       if (!p || p.defId !== 'ramp') return;
-      const lens = [160, 200, 240, 80, 120];
-      const idx = lens.indexOf(p.len);
-      const next = lens[(idx + 1) % lens.length];
+      let next = p.len * 2;
+      if (next > 1920) next = 80;
       this.game.setPieceLen(p, next, true, p.len);
       this.game.audio.ui();
       this.updateSelection();
@@ -177,8 +173,10 @@ export class UI {
       const card = (e.target as HTMLElement).closest('.card') as HTMLElement | null;
       if (!card) return;
       const kind = card.dataset.kind;
-      if (kind === 'shop') {
-        this.openOverlay('shop');
+      if (kind === 'piece') {
+        const id = card.dataset.id ?? '';
+        this.game.armPiece(id);
+        this.refreshTray();
         return;
       }
       if (kind === 'marble') {
@@ -206,14 +204,12 @@ export class UI {
     this.refreshSound();
     this.updateSelection();
     this.updateTutorial();
-    this.refreshShopIfOpen();
     this.refreshChallenges();
     this.refreshSettings();
   }
 
   refreshHud() {
     this.sparks.textContent = fmt(this.game.currency);
-    this.shopSparks.textContent = fmt(this.game.currency);
     this.chSparks.textContent = fmt(this.game.currency);
     this.btnUndo.disabled = !this.game.canUndo;
     this.btnRedo.disabled = !this.game.canRedo;
@@ -237,9 +233,6 @@ export class UI {
       const mult = this.game.comboMultiplier;
       this.comboMult.textContent = `×${Number.isInteger(mult) ? mult : mult.toFixed(2).replace('0', '')}`;
     }
-
-    const card = this.tray.querySelector('.store-card');
-    if (card) card.classList.toggle('has-new', this.game.hasAffordable());
   }
 
   refreshMode() {
@@ -251,13 +244,6 @@ export class UI {
     const level = this.game.settings.sound;
     this.soundIcon.innerHTML = `<use href="#i-sound${level}"></use>`;
     this.btnSound.setAttribute('aria-label', `Sonido ${level === 0 ? 'apagado' : level === 1 ? 'bajo' : 'alto'}`);
-  }
-
-  revealTrayItem(id: string) {
-    const card = this.tray.querySelector(`.card[data-id="${id}"]`) as HTMLElement | null;
-    if (!card) return;
-    const left = card.offsetLeft - this.tray.clientWidth / 2 + card.offsetWidth / 2;
-    this.tray.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
   }
 
   refreshTray() {
@@ -281,7 +267,7 @@ export class UI {
       const items = SHOP_ITEMS.filter((it) => it.kind === 'piece' && this.game.owned.has(it.id));
       for (const item of items) {
         const card = document.createElement('button');
-        card.className = 'card';
+        card.className = `card${this.game.armedDefId === item.id ? ' is-active' : ''}`;
         card.dataset.id = item.id;
         card.dataset.kind = 'piece';
         card.setAttribute('aria-label', item.label);
@@ -291,12 +277,6 @@ export class UI {
         drawPreview(canvas, item.id, 'piece');
       }
     }
-    const shopCard = document.createElement('button');
-    shopCard.className = `card store-card${this.game.hasAffordable() ? ' has-new' : ''}`;
-    shopCard.dataset.kind = 'shop';
-    shopCard.setAttribute('aria-label', 'Abrir tienda');
-    shopCard.innerHTML = icon('bag');
-    this.tray.appendChild(shopCard);
     this.tray.scrollLeft = scroll;
   }
 
@@ -332,10 +312,10 @@ export class UI {
       const dot = this.selColor.querySelector('span') as HTMLElement;
       dot.style.background = COLORS[p.color] ?? COLORS[0];
     }
-    const count = 2 + (isRamp ? 1 : 0) + (def.tintable ? 1 : 0);
+    const count = 3 + (isRamp ? 1 : 0) + (def.tintable ? 1 : 0);
     const width = count * 52 + (count - 1) * 8;
     this.selection.style.left = `${clamp(top.x - width / 2, 8, this.game.viewW - width - 8)}px`;
-    this.selection.style.top = `${clamp(top.y - 6, 64, this.game.viewH - 150)}px`;
+    this.selection.style.top = `${clamp(top.y - 26, 64, this.game.viewH - 150)}px`;
   }
 
   private bindRotate() {
@@ -386,12 +366,7 @@ export class UI {
   openOverlay(id: OverlayId) {
     this.game.audio.ui();
     $$('.overlay').forEach((el) => el.classList.add('is-hidden'));
-    if (id === 'shop') {
-      this.selectedShopId = '';
-      this.shop.classList.remove('is-hidden');
-      this.refreshShop();
-      this.game.tutorialShopVisited();
-    } else if (id === 'challenges') {
+    if (id === 'challenges') {
       this.challenges.classList.remove('is-hidden');
       this.refreshChallenges();
     } else if (id === 'settings') {
@@ -409,114 +384,6 @@ export class UI {
     this.game.setOverlayOpen(false);
     this.game.audio.ui();
     this.refreshAll();
-  }
-
-  // ---------------- shop ----------------
-
-  private buildShopTabs() {
-    const tabs: { id: ShopCategory; icon: string; label: string }[] = [
-      { id: 'build', icon: 'brick', label: 'Construcción' },
-      { id: 'music', icon: 'note', label: 'Música' },
-      { id: 'energy', icon: 'spark', label: 'Energía' },
-      { id: 'marbles', icon: 'marble', label: 'Canicas' }
-    ];
-    this.shopTabs.innerHTML = tabs
-      .map(
-        (t) =>
-          `<button class="tab${t.id === this.shopTab ? ' is-active' : ''}" data-tab="${t.id}" aria-label="${t.label}">${icon(t.icon)}</button>`
-      )
-      .join('');
-    this.shopTabs.querySelectorAll<HTMLElement>('.tab').forEach((tab) => {
-      tab.addEventListener('click', () => {
-        this.shopTab = (tab.dataset.tab as ShopCategory) ?? 'build';
-        this.selectedShopId = '';
-        this.game.audio.ui();
-        this.shopTabs.querySelectorAll('.tab').forEach((t) => t.classList.toggle('is-active', t === tab));
-        this.refreshShop();
-      });
-    });
-  }
-
-  refreshShopIfOpen() {
-    if (!this.shop.classList.contains('is-hidden')) this.refreshShop();
-  }
-
-  refreshShop() {
-    if (this.shop.classList.contains('is-hidden')) return;
-    this.shopSparks.textContent = fmt(this.game.currency);
-    const scroll = this.shopGrid.scrollTop;
-    this.shopGrid.innerHTML = '';
-    for (const item of SHOP_ITEMS) {
-      if (item.category !== this.shopTab) continue;
-      const owned = this.game.isOwned(item.id);
-      const afford = this.game.currency >= item.price;
-      const card = document.createElement('div');
-      card.className = `shop-card${owned ? ' is-owned' : ''}${item.id.startsWith('xylo') ? ' is-wide' : ''}${this.selectedShopId === item.id ? ' is-selected' : ''}`;
-      card.dataset.id = item.id;
-      card.setAttribute('role', 'button');
-      card.tabIndex = 0;
-      card.setAttribute('aria-label', `${item.label}${owned ? ', comprada' : `, ${item.price} chispas`}`);
-      const canvas = document.createElement('canvas');
-      card.appendChild(canvas);
-      const meta = document.createElement('div');
-      meta.className = 'shop-meta';
-      if (owned) {
-        meta.innerHTML = `<span class="owned-mark">${icon('check')}</span>`;
-      } else {
-        meta.innerHTML = `<span class="price${afford ? '' : ' cant'}">${icon('spark')}${fmt(item.price)}</span>`;
-      }
-      card.appendChild(meta);
-      if (!owned) {
-        const buy = document.createElement('button');
-        buy.className = `buy-btn${afford ? '' : ' cant'}`;
-        buy.innerHTML = icon('check');
-        buy.setAttribute('aria-label', `Comprar ${item.label}`);
-        buy.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.tryBuy(item.id, card);
-        });
-        card.appendChild(buy);
-      }
-      card.addEventListener('click', () => {
-        if (owned) return;
-        if (this.selectedShopId === item.id) {
-          this.tryBuy(item.id, card);
-          return;
-        }
-        this.selectedShopId = item.id;
-        this.shopGrid.querySelectorAll<HTMLElement>('.shop-card').forEach((c) => {
-          c.classList.toggle('is-selected', c === card);
-        });
-        this.game.audio.ui();
-      });
-      card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          card.click();
-        }
-      });
-      this.shopGrid.appendChild(card);
-      drawPreview(canvas, item.id, item.kind);
-    }
-    this.shopGrid.scrollTop = scroll;
-  }
-
-  private tryBuy(id: string, card: HTMLElement) {
-    const item = SHOP_BY_ID.get(id);
-    if (!item) return;
-    if (this.game.currency < item.price) {
-      card.classList.remove('shake');
-      void card.offsetWidth;
-      card.classList.add('shake');
-      this.game.audio.error();
-      return;
-    }
-    if (this.game.buy(id)) {
-      this.selectedShopId = '';
-      this.refreshShop();
-      this.refreshTray();
-      this.refreshHud();
-    }
   }
 
   // ---------------- challenges ----------------
@@ -597,31 +464,12 @@ export class UI {
       <div class="set-value world-dots">${worldDots}</div>
     </div>`);
     rows.push(this.buildRow('play', 'Repetir tutorial', '', 'tutorial'));
-    rows.push(this.buildRow('reset', 'Reiniciar progreso', '', 'reset', 'reset-row'));
-    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.0 · sin datos · sin red</span></div>`);
+    rows.push(this.buildRow('trash', 'Borrar canvas', '', 'clear', 'reset-row'));
+    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.1 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
     this.settingsBody.querySelectorAll<HTMLElement>('.set-row.tap').forEach((row) => {
       const action = row.dataset.action ?? '';
-      if (action === 'reset') {
-        let timer = 0;
-        const start = () => {
-          clearTimeout(timer);
-          row.classList.add('holding');
-          timer = window.setTimeout(() => {
-            this.game.resetProgress();
-          }, 1500);
-        };
-        const stop = () => {
-          clearTimeout(timer);
-          row.classList.remove('holding');
-        };
-        row.addEventListener('pointerdown', start);
-        row.addEventListener('pointerup', stop);
-        row.addEventListener('pointercancel', stop);
-        row.addEventListener('pointerleave', stop);
-        return;
-      }
       row.addEventListener('click', () => {
         if (action === 'sound') this.game.cycleSound();
         else if (action === 'quality') this.game.cycleQuality();
@@ -630,6 +478,9 @@ export class UI {
         else if (action === 'haptics') this.game.toggleHaptics();
         else if (action === 'tutorial') {
           this.game.restartTutorial();
+          this.closeOverlays();
+        } else if (action === 'clear') {
+          this.game.clearCanvas();
           this.closeOverlays();
         }
         this.refreshSettings();
@@ -661,15 +512,22 @@ export class UI {
       $$('.tut-target').forEach((el) => el.classList.remove('tut-target'));
       return;
     }
+    const hand = this.tutorial.querySelector('.hand') as HTMLElement;
     let target: HTMLElement | null = null;
     if (this.game.tutorialStep === 0) {
       target = (this.tray.querySelector('.card[data-id="brick2"]') as HTMLElement) ?? this.tray;
-    } else if (this.game.tutorialStep === 1) {
-      target = $('#mode-play') as HTMLElement;
     } else if (this.game.tutorialStep === 2) {
-      target = (this.tray.querySelector('.card.marble-card') as HTMLElement) ?? this.tray;
-    } else if (this.game.tutorialStep === 3) {
-      target = this.tray.querySelector('.store-card') as HTMLElement;
+      target = $('#mode-play') as HTMLElement;
+    }
+    if (this.game.tutorialStep === 1 || this.game.tutorialStep === 3) {
+      $$('.tut-target').forEach((el) => el.classList.remove('tut-target'));
+      const world = this.game.tutorialStep === 1
+        ? { x: this.game.camera.x - 150, y: this.game.camera.y - 40 }
+        : { x: this.game.camera.x, y: this.game.camera.y - 160 };
+      const s = this.game.worldToScreen(world.x, world.y);
+      hand.style.left = `${clamp(s.x - 32, 8, window.innerWidth - 72)}px`;
+      hand.style.top = `${clamp(s.y - 40, 60, window.innerHeight - 90)}px`;
+      return;
     }
     $$('.tut-target').forEach((el) => {
       if (el !== target) el.classList.remove('tut-target');
@@ -677,7 +535,6 @@ export class UI {
     if (!target) return;
     target.classList.add('tut-target');
     const r = target.getBoundingClientRect();
-    const hand = this.tutorial.querySelector('.hand') as HTMLElement;
     const isTrayCard = target.classList.contains('card');
     const left = isTrayCard ? r.right + 4 : r.left + r.width / 2 - 32;
     const top = isTrayCard ? r.top - 54 : r.top - 58;

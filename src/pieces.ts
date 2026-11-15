@@ -141,6 +141,7 @@ interface ColOpts {
   conveyor?: number;
   cannon?: boolean;
   bumper?: boolean;
+  bubble?: boolean;
   tangent?: Vec2;
   up?: Vec2;
   e?: number;
@@ -175,6 +176,7 @@ function addCap(
     conveyor: opts.conveyor ?? 0,
     cannon: opts.cannon ? 1 : 0,
     bumper: opts.bumper ? 1 : 0,
+    bubble: opts.bubble ? 1 : 0,
     chime: opts.chime ? 1 : 0,
     tx: opts.tangent ? dir(p, opts.tangent.x, opts.tangent.y).x : 0,
     ty: opts.tangent ? dir(p, opts.tangent.x, opts.tangent.y).y : 0,
@@ -249,6 +251,40 @@ export function xyloLayout(count: number): { widths: number[]; xs: number[]; tot
 
 export const FUNNEL_LEFT = polylinePoints(-88, -72, -76, 18, -32, 56, 12);
 export const FUNNEL_RIGHT = polylinePoints(88, -72, 76, 18, 32, 56, 12);
+
+export function spiralPoints(): Vec2[] {
+  const pts: Vec2[] = [];
+  const N = 168;
+  const turns = 2;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const a = -Math.PI / 2 + t * Math.PI * 2 * turns;
+    const r = 152 - 116 * t;
+    pts.push({
+      x: Math.cos(a) * r - 14,
+      y: Math.sin(a) * r * 0.58 + 120 * t - 20
+    });
+  }
+  return pts;
+}
+
+export const SPIRAL_POINTS = spiralPoints();
+
+function offsetSpiral(points: Vec2[], d: number): Vec2[] {
+  const out: Vec2[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[Math.max(0, i - 1)];
+    const b = points[Math.min(points.length - 1, i + 1)];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    out.push({ x: points[i].x + (-dy / len) * d, y: points[i].y + (dx / len) * d });
+  }
+  return out;
+}
+
+export const SPIRAL_OUTER = offsetSpiral(SPIRAL_POINTS, 25);
+export const SPIRAL_INNER = offsetSpiral(SPIRAL_POINTS, -25);
 
 const defs: PieceDef[] = [
   {
@@ -447,7 +483,7 @@ const defs: PieceDef[] = [
             h: 80,
             r: 0,
             rot: p.rot,
-            power: 3000,
+            power: 6000,
             pieceId: p.id,
             disabledUntil: 0,
             dx: d.x,
@@ -568,6 +604,78 @@ const defs: PieceDef[] = [
         }
       ]
     })
+  },
+  {
+    id: 'spiral',
+    category: 'build',
+    price: 0,
+    label: 'Caída en espiral',
+    w: 280,
+    h: 240,
+    tintable: false,
+    defaultColor: 0,
+    build: (p) => {
+      const c: Collider[] = [];
+      for (let i = 0; i < SPIRAL_POINTS.length; i += 8) {
+        addCap(c, p, SPIRAL_POINTS[i].x, SPIRAL_POINTS[i].y, SPIRAL_POINTS[i].x, SPIRAL_POINTS[i].y, 9, 'chime', { e: 0.42, chime: true, note: (i / 8) % 8 });
+      }
+      return { colliders: c, triggers: [] };
+    }
+  },
+  {
+    id: 'bubble',
+    category: 'energy',
+    price: 0,
+    label: 'Burbuja',
+    w: 220,
+    h: 30,
+    tintable: false,
+    defaultColor: 0,
+    build: (p) => {
+      const c: Collider[] = [];
+      addCap(c, p, -92, 0, 92, 0, 8, 'rubber', { bubble: true, e: 0.15 });
+      return { colliders: c, triggers: [] };
+    }
+  },
+  {
+    id: 'portal',
+    category: 'energy',
+    price: 0,
+    label: 'Portales',
+    w: 240,
+    h: 100,
+    tintable: false,
+    defaultColor: 4,
+    build: (p) => {
+      const a = tx(p, -62, 0);
+      const b = tx(p, 62, 0);
+      return {
+        colliders: [],
+        triggers: [
+          { kind: 'portal', x: a.x, y: a.y, w: 0, h: 0, r: 28, rot: p.rot, power: 0, pieceId: p.id, disabledUntil: 0, dx: 0, dy: 0, pairId: p.id },
+          { kind: 'portal', x: b.x, y: b.y, w: 0, h: 0, r: 28, rot: p.rot, power: 0, pieceId: p.id, disabledUntil: 0, dx: 0, dy: 0, pairId: p.id }
+        ]
+      };
+    }
+  },
+  {
+    id: 'fan',
+    category: 'energy',
+    price: 0,
+    label: 'Ventilador',
+    w: 110,
+    h: 220,
+    tintable: false,
+    defaultColor: 0,
+    build: (p) => {
+      const up = dir(p, 0, -1);
+      return {
+        colliders: [],
+        triggers: [
+          { kind: 'fan', x: p.x, y: p.y, w: 96, h: 200, r: 0, rot: p.rot, power: 3400, pieceId: p.id, disabledUntil: 0, dx: up.x, dy: up.y, pairId: 0 }
+        ]
+      };
+    }
   },
   {
     id: 'xylo3',
@@ -702,6 +810,10 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'halfPipe', category: 'build', price: 800, label: 'Medio tubo', kind: 'piece' },
   { id: 'funnel', category: 'build', price: 550, label: 'Embudo', kind: 'piece' },
   { id: 'conveyor', category: 'build', price: 850, label: 'Cinta', kind: 'piece' },
+  { id: 'spiral', category: 'build', price: 0, label: 'Caída en espiral', kind: 'piece' },
+  { id: 'bubble', category: 'energy', price: 0, label: 'Burbuja', kind: 'piece' },
+  { id: 'portal', category: 'energy', price: 0, label: 'Portales', kind: 'piece' },
+  { id: 'fan', category: 'energy', price: 0, label: 'Ventilador', kind: 'piece' },
   { id: 'xylo3', category: 'music', price: 0, label: 'Xilófono 3', kind: 'piece' },
   { id: 'xylo5', category: 'music', price: 650, label: 'Xilófono 5', kind: 'piece' },
   { id: 'xylo8', category: 'music', price: 1100, label: 'Xilófono 8', kind: 'piece' },
@@ -718,7 +830,7 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'plasma', category: 'marbles', price: 2500, label: 'Canica plasma', kind: 'marble' }
 ];
 
-export const STARTING_OWNED = ['brick2', 'brick4', 'ramp', 'xylo3', 'goal', 'crystal'];
+export const STARTING_OWNED = SHOP_ITEMS.map((i) => i.id);
 
 export const SHOP_BY_ID = new Map(SHOP_ITEMS.map((i) => [i.id, i]));
 
