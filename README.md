@@ -1,6 +1,6 @@
 # Marblelous
 
-Un taller infinito de canicas, rampas y música. Hecho para jugar en iPad con el dedo, pero funciona con ratón y teclado.
+Un taller infinito de canicas, rampas y música, con piezas en perspectiva 2.5D. Hecho para jugar en iPad con el dedo, pero funciona con ratón y teclado.
 
 ## Jugar
 

@@ -1,5 +1,5 @@
 import type { Collider, Marble, PhysEvent, Piece, Trigger } from './types';
-import { LOOP_RADIUS, buildPiece, getPieceDef } from './pieces';
+import { LOOP_RADIUS, SPIRAL_DURATION, SPIRAL_ENTRY, buildPiece, getPieceDef, spiralDepth, spiralLocal } from './pieces';
 import { clamp, shortAngle, TAU } from './util';
 
 const CELL = 64;
@@ -12,6 +12,13 @@ interface LoopInfo {
   x: number;
   y: number;
   r: number;
+}
+
+interface SpiralInfo {
+  pieceId: number;
+  x: number;
+  y: number;
+  rot: number;
 }
 
 function cellKey(cx: number, cy: number) {
@@ -32,6 +39,7 @@ export class PhysicsWorld {
   colliders: Collider[] = [];
   triggers: Trigger[] = [];
   loops: LoopInfo[] = [];
+  spirals: SpiralInfo[] = [];
   events: PhysEvent[] = [];
   private grid = new Map<number, number[]>();
   private disabled = new Map<number, number>();
@@ -42,12 +50,16 @@ export class PhysicsWorld {
     this.colliders = [];
     this.triggers = [];
     this.loops = [];
+    this.spirals = [];
     for (const p of pieces) {
       const built = buildPiece(p);
       for (const c of built.colliders) this.colliders.push(c);
       for (const t of built.triggers) this.triggers.push(t);
       if (p.defId === 'loop') {
         this.loops.push({ pieceId: p.id, x: p.x, y: p.y, r: LOOP_RADIUS });
+      }
+      if (p.defId === 'spiral') {
+        this.spirals.push({ pieceId: p.id, x: p.x, y: p.y, rot: p.rot });
       }
     }
     this.grid.clear();
@@ -100,6 +112,10 @@ export class PhysicsWorld {
   }
 
   private stepMarble(m: Marble, dt: number, now: number) {
+    if (m.ridePiece) {
+      this.stepRide(m, dt);
+      return;
+    }
     if (!m.awake) return;
     m.px = m.x;
     m.py = m.y;
@@ -154,6 +170,64 @@ export class PhysicsWorld {
         m.vy = 0;
       }
     } else {
+      m.sleepTimer = 0;
+    }
+  }
+
+  private stepRide(m: Marble, dt: number) {
+    const piece = this.spirals.find((p) => p.pieceId === m.ridePiece);
+    if (!piece) {
+      m.ridePiece = 0;
+      m.rideScale = 1;
+      m.rideDepth = 0;
+      m.vy = 260;
+      m.awake = true;
+      return;
+    }
+    m.rideT += dt / SPIRAL_DURATION;
+    const t = Math.min(1, m.rideT);
+    const local = spiralLocal(t);
+    const c = Math.cos(piece.rot);
+    const s = Math.sin(piece.rot);
+    m.px = m.x;
+    m.py = m.y;
+    m.x = piece.x + local.x * c - local.y * s;
+    m.y = piece.y + local.x * s + local.y * c;
+    m.vx = 0;
+    m.vy = 0;
+    m.contact = 0;
+    m.airTime = 0;
+    m.sleepTimer = 0;
+    m.rideDepth = spiralDepth(t);
+    m.rideScale = 1 + m.rideDepth * 0.1;
+    const slot = Math.min(7, Math.floor(t * 8));
+    if (slot > m.rideNextChime) {
+      m.rideNextChime = slot;
+      this.events.push({
+        type: 'chime',
+        x: m.x,
+        y: m.y,
+        pieceId: m.ridePiece,
+        note: slot,
+        impact: 260,
+        marbleId: m.id,
+        speed: 0
+      });
+    }
+    if (m.rideT >= 1) {
+      const end = spiralLocal(1);
+      m.x = piece.x + end.x * c - end.y * s;
+      m.y = piece.y + end.x * s + end.y * c;
+      m.px = m.x;
+      m.py = m.y;
+      m.ridePiece = 0;
+      m.rideScale = 1;
+      m.rideDepth = 0;
+      m.vx = 90 * c - 300 * s;
+      m.vy = 90 * s + 300 * c;
+      m.awake = true;
+      m.contact = 0;
+      m.airTime = 0;
       m.sleepTimer = 0;
     }
   }
@@ -240,6 +314,40 @@ export class PhysicsWorld {
           t.disabledUntil = now + 5000;
           return;
         }
+      } else if (t.kind === 'spiral') {
+        if (m.ridePiece) continue;
+        if (!this.inTriggerCircle(m, t)) continue;
+        if (m.vy < -60) continue;
+        const piece = this.spirals.find((x) => x.pieceId === t.pieceId);
+        if (!piece) continue;
+        m.ridePiece = t.pieceId;
+        m.rideT = 0;
+        m.rideNextChime = 0;
+        m.rideScale = 1;
+        m.rideDepth = 0;
+        m.vx = 0;
+        m.vy = 0;
+        m.awake = true;
+        m.sleepTimer = 0;
+        m.contact = 0;
+        m.airTime = 0;
+        const c = Math.cos(piece.rot);
+        const s = Math.sin(piece.rot);
+        m.x = piece.x + SPIRAL_ENTRY.x * c - SPIRAL_ENTRY.y * s;
+        m.y = piece.y + SPIRAL_ENTRY.x * s + SPIRAL_ENTRY.y * c;
+        m.px = m.x;
+        m.py = m.y;
+        this.events.push({
+          type: 'spiral',
+          x: m.x,
+          y: m.y,
+          pieceId: t.pieceId,
+          note: -1,
+          impact: 0,
+          marbleId: m.id,
+          speed: 0
+        });
+        return;
       } else if (t.kind === 'portal') {
         if (!this.inTriggerCircle(m, t)) continue;
         if (now - m.lastPortalAt < 350) continue;
@@ -640,6 +748,11 @@ export function createMarble(
     lastBoostPiece: 0,
     lastPortalAt: -1000,
     lastPortalPiece: 0,
+    ridePiece: 0,
+    rideT: 0,
+    rideNextChime: 0,
+    rideScale: 1,
+    rideDepth: 0,
     loopData: new Map()
   };
 }

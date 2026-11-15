@@ -13,6 +13,7 @@ import {
   PALETTE,
   getPieceDef,
   pieceHitSize,
+  spiralLocal,
   xyloLayout
 } from './pieces';
 import { clamp, lerp, rgba, TAU } from './util';
@@ -287,6 +288,18 @@ export class Renderer {
       }
     }
 
+    if (p.defId === 'spiral' && p.flash) {
+      const age = now - p.flash;
+      if (age >= 0 && age < 150) {
+        const t = Math.min(1, Math.max(0, ((p.flashNote ?? 0) + 1) / 8));
+        const lo = spiralLocal(t);
+        ctx.fillStyle = `rgba(255,253,248,${(1 - age / 150) * 0.75})`;
+        ctx.beginPath();
+        ctx.arc(lo.x, lo.y, 11, 0, TAU);
+        ctx.fill();
+      }
+    }
+
     if (p.flash) {
       const age = now - p.flash;
       if (age >= 0 && age < 140) {
@@ -345,7 +358,8 @@ export class Renderer {
 
     const age = now - m.bornAt;
     const grow = age >= 0 && age < 90 ? 0.35 + 0.65 * (age / 90) : 1;
-    drawMarbleSprite(ctx, type, x, y, m.r * grow);
+    const rideScale = m.ridePiece ? m.rideScale : 1;
+    drawMarbleSprite(ctx, type, x, y, m.r * grow * rideScale);
   }
 
   private drawSelection(ctx: CanvasRenderingContext2D, p: Piece, zoom: number) {

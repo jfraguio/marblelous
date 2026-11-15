@@ -57,7 +57,7 @@ export interface Collider {
   uy: number;
 }
 
-export type TriggerKind = 'goal' | 'star' | 'boost' | 'magnet' | 'portal' | 'fan';
+export type TriggerKind = 'goal' | 'star' | 'boost' | 'magnet' | 'portal' | 'fan' | 'spiral';
 
 export interface Trigger {
   kind: TriggerKind;
@@ -122,6 +122,11 @@ export interface Marble {
   lastBoostPiece: number;
   lastPortalAt: number;
   lastPortalPiece: number;
+  ridePiece: number;
+  rideT: number;
+  rideNextChime: number;
+  rideScale: number;
+  rideDepth: number;
   loopData: Map<number, { last: number; total: number; awarded: boolean; out: number }>;
 }
 
@@ -152,6 +157,7 @@ export interface PhysEvent {
     | 'star'
     | 'boost'
     | 'portal'
+    | 'spiral'
     | 'air'
     | 'marble';
   x: number;

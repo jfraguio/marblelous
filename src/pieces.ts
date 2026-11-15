@@ -252,39 +252,27 @@ export function xyloLayout(count: number): { widths: number[]; xs: number[]; tot
 export const FUNNEL_LEFT = polylinePoints(-88, -72, -76, 18, -32, 56, 12);
 export const FUNNEL_RIGHT = polylinePoints(88, -72, 76, 18, 32, 56, 12);
 
-export function spiralPoints(): Vec2[] {
-  const pts: Vec2[] = [];
-  const N = 168;
-  const turns = 2;
-  for (let i = 0; i <= N; i++) {
-    const t = i / N;
-    const a = -Math.PI / 2 + t * Math.PI * 2 * turns;
-    const r = 152 - 116 * t;
-    pts.push({
-      x: Math.cos(a) * r - 14,
-      y: Math.sin(a) * r * 0.58 + 120 * t - 20
-    });
-  }
-  return pts;
+export const SPIRAL_TURNS = 2.25;
+export const SPIRAL_DURATION = 2.4;
+
+export function spiralAngle(t: number): number {
+  return -Math.PI / 2 + t * TAU * SPIRAL_TURNS;
 }
 
-export const SPIRAL_POINTS = spiralPoints();
-
-function offsetSpiral(points: Vec2[], d: number): Vec2[] {
-  const out: Vec2[] = [];
-  for (let i = 0; i < points.length; i++) {
-    const a = points[Math.max(0, i - 1)];
-    const b = points[Math.min(points.length - 1, i + 1)];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    out.push({ x: points[i].x + (-dy / len) * d, y: points[i].y + (dx / len) * d });
-  }
-  return out;
+/** Proyección 2.5D local de la hélice: x lateral, y descendente. */
+export function spiralLocal(t: number): Vec2 {
+  const a = spiralAngle(t);
+  const rx = 122 - 64 * t;
+  const ry = rx * 0.36;
+  const cy = -78 + 232 * t;
+  return { x: Math.cos(a) * rx, y: cy + Math.sin(a) * ry };
 }
 
-export const SPIRAL_OUTER = offsetSpiral(SPIRAL_POINTS, 25);
-export const SPIRAL_INNER = offsetSpiral(SPIRAL_POINTS, -25);
+export function spiralDepth(t: number): number {
+  return Math.sin(spiralAngle(t));
+}
+
+export const SPIRAL_ENTRY = spiralLocal(0);
 
 const defs: PieceDef[] = [
   {
@@ -611,15 +599,31 @@ const defs: PieceDef[] = [
     price: 0,
     label: 'Caída en espiral',
     w: 280,
-    h: 240,
+    h: 320,
     tintable: false,
     defaultColor: 0,
     build: (p) => {
-      const c: Collider[] = [];
-      for (let i = 0; i < SPIRAL_POINTS.length; i += 8) {
-        addCap(c, p, SPIRAL_POINTS[i].x, SPIRAL_POINTS[i].y, SPIRAL_POINTS[i].x, SPIRAL_POINTS[i].y, 9, 'chime', { e: 0.42, chime: true, note: (i / 8) % 8 });
-      }
-      return { colliders: c, triggers: [] };
+      const e = tx(p, SPIRAL_ENTRY.x, SPIRAL_ENTRY.y);
+      return {
+        colliders: [],
+        triggers: [
+          {
+            kind: 'spiral',
+            x: e.x,
+            y: e.y,
+            w: 0,
+            h: 0,
+            r: 68,
+            rot: p.rot,
+            power: 0,
+            pieceId: p.id,
+            disabledUntil: 0,
+            dx: 0,
+            dy: 0,
+            pairId: 0
+          }
+        ]
+      };
     }
   },
   {

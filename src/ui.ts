@@ -465,7 +465,7 @@ export class UI {
     </div>`);
     rows.push(this.buildRow('play', 'Repetir tutorial', '', 'tutorial'));
     rows.push(this.buildRow('trash', 'Borrar canvas', '', 'clear', 'reset-row'));
-    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.1.1 · sin datos · sin red</span></div>`);
+    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.2 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
     this.settingsBody.querySelectorAll<HTMLElement>('.set-row.tap').forEach((row) => {

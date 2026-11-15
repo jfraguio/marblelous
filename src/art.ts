@@ -13,7 +13,9 @@ import {
   RAMP_CURVE_END,
   RAMP_CURVE_RADIUS,
   RAMP_CURVE_START,
-  SPIRAL_POINTS,
+  SPIRAL_ENTRY,
+  spiralDepth,
+  spiralLocal,
   getPieceDef,
   xyloLayout
 } from './pieces';
@@ -47,14 +49,39 @@ function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: n
   ctx.closePath();
 }
 
-function makeSprite(worldW: number, worldH: number, draw: (ctx: CanvasRenderingContext2D) => void): Sprite {
+const EXTRUDE_X = 5;
+const EXTRUDE_Y = 6;
+const EXTRUDE_STEPS = 8;
+
+function makeSprite(
+  worldW: number,
+  worldH: number,
+  draw: (ctx: CanvasRenderingContext2D) => void,
+  extrude = true,
+  sideColor = '#2B2A26'
+): Sprite {
   const w = Math.max(1, worldW + PAD * 2);
   const h = Math.max(1, worldH + PAD * 2);
-  const canvas = makeCanvas(w * SPRITE_SCALE, h * SPRITE_SCALE);
+  const art = makeCanvas(w * SPRITE_SCALE, h * SPRITE_SCALE);
+  const actx = art.getContext('2d')!;
+  actx.scale(SPRITE_SCALE, SPRITE_SCALE);
+  actx.translate(w / 2, h / 2);
+  draw(actx);
+  if (!extrude) return { canvas: art, w, h };
+
+  const canvas = makeCanvas(art.width, art.height);
   const ctx = canvas.getContext('2d')!;
-  ctx.scale(SPRITE_SCALE, SPRITE_SCALE);
-  ctx.translate(w / 2, h / 2);
-  draw(ctx);
+  const sil = makeCanvas(art.width, art.height);
+  const sctx = sil.getContext('2d')!;
+  sctx.drawImage(art, 0, 0);
+  sctx.globalCompositeOperation = 'source-in';
+  sctx.fillStyle = sideColor;
+  sctx.fillRect(0, 0, sil.width, sil.height);
+  for (let i = EXTRUDE_STEPS; i >= 1; i--) {
+    const t = i / EXTRUDE_STEPS;
+    ctx.drawImage(sil, EXTRUDE_X * t * SPRITE_SCALE, EXTRUDE_Y * t * SPRITE_SCALE);
+  }
+  ctx.drawImage(art, 0, 0);
   return { canvas, w, h };
 }
 
@@ -117,7 +144,7 @@ function spriteDims(p: Piece): { w: number; h: number } {
     case 'magnet':
       return { w: 360, h: 360 };
     case 'spiral':
-      return { w: 300, h: 260 };
+      return { w: 300, h: 330 };
     case 'bubble':
       return { w: 228, h: 44 };
     case 'portal':
@@ -162,8 +189,10 @@ export function drawPiece(ctx: CanvasRenderingContext2D, p: Piece) {
 }
 
 function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
+  const base = colorFor(p);
+  const noExtrude = p.defId === 'spiral';
   return makeSprite(ww, hh, (ctx) => {
-    const c = colorFor(p);
+    const c = base;
     const dark = shade(c, -0.18);
     const light = shade(c, 0.22);
     const ink = rgba(PALETTE.ink, 0.16);
@@ -542,49 +571,103 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.arc(-9, -11, 22, Math.PI * 1.0, Math.PI * 1.55);
       ctx.stroke();
     } else if (p.defId === 'spiral') {
-      const path = () => {
-        ctx.beginPath();
-        ctx.moveTo(SPIRAL_POINTS[0].x, SPIRAL_POINTS[0].y);
-        for (let i = 1; i < SPIRAL_POINTS.length; i++) ctx.lineTo(SPIRAL_POINTS[i].x, SPIRAL_POINTS[i].y);
+      const N = 168;
+      const pts: { x: number; y: number; d: number }[] = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const lo = spiralLocal(t);
+        pts.push({ x: lo.x, y: lo.y, d: spiralDepth(t) });
+      }
+      const normalAt = (i: number) => {
+        const a = pts[Math.max(0, i - 1)];
+        const b = pts[Math.min(N, i + 1)];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return { x: -dy / len, y: dx / len };
       };
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+      const band = (back: boolean) => {
+        for (let i = 0; i < N; i++) {
+          const depth = (pts[i].d + pts[i + 1].d) / 2;
+          if ((depth < 0) !== back) continue;
+          const n1 = normalAt(i);
+          const n2 = normalAt(i + 1);
+          const l1 = { x: pts[i].x + n1.x * 15, y: pts[i].y + n1.y * 15 };
+          const l2 = { x: pts[i + 1].x + n2.x * 15, y: pts[i + 1].y + n2.y * 15 };
+          const r1 = { x: pts[i].x - n1.x * 15, y: pts[i].y - n1.y * 15 };
+          const r2 = { x: pts[i + 1].x - n2.x * 15, y: pts[i + 1].y - n2.y * 15 };
+          ctx.lineCap = 'round';
+          // superficie del canal
+          ctx.strokeStyle = back ? 'rgba(46,158,151,0.16)' : 'rgba(143,211,238,0.56)';
+          ctx.lineWidth = back ? 26 : 30;
+          ctx.beginPath();
+          ctx.moveTo(pts[i].x, pts[i].y);
+          ctx.lineTo(pts[i + 1].x, pts[i + 1].y);
+          ctx.stroke();
+          // raíles
+          ctx.strokeStyle = back ? 'rgba(46,158,151,0.42)' : '#2E9E97';
+          ctx.lineWidth = back ? 2.2 : 3.2;
+          ctx.beginPath();
+          ctx.moveTo(l1.x, l1.y);
+          ctx.lineTo(l2.x, l2.y);
+          ctx.moveTo(r1.x, r1.y);
+          ctx.lineTo(r2.x, r2.y);
+          ctx.stroke();
+          if (!back) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.36)';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(l1.x - 1, l1.y - 1);
+            ctx.lineTo(l2.x - 1, l2.y - 1);
+            ctx.stroke();
+          }
+        }
+      };
       ctx.save();
       ctx.translate(1.5, 3);
-      path();
-      ctx.strokeStyle = PALETTE.shadow;
-      ctx.lineWidth = 8;
-      ctx.stroke();
+      band(true);
+      band(false);
       ctx.restore();
-      path();
-      ctx.strokeStyle = 'rgba(46,158,151,0.34)';
-      ctx.lineWidth = 6;
-      ctx.stroke();
-      path();
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 1.6;
-      ctx.stroke();
-      for (let i = 0; i < SPIRAL_POINTS.length; i += 8) {
-        const x = SPIRAL_POINTS[i].x;
-        const y = SPIRAL_POINTS[i].y;
-        const col = NOTE_COLORS[(i / 8) % 8] ?? PALETTE.teal;
+      // pequeñas láminas musicales
+      for (let i = 0; i < 7; i++) {
+        const t = (i + 1) / 8;
+        const lo = spiralLocal(t);
+        const col = NOTE_COLORS[i + 1] ?? NOTE_COLORS[0];
         ctx.fillStyle = PALETTE.shadow;
         ctx.beginPath();
-        ctx.arc(x + 1, y + 3, 11, 0, TAU);
+        ctx.arc(lo.x + 1, lo.y + 2.5, 8, 0, TAU);
         ctx.fill();
-        ctx.fillStyle = shade(col, -0.2);
+        ctx.fillStyle = shade(col, -0.18);
         ctx.beginPath();
-        ctx.arc(x, y, 10, 0, TAU);
+        ctx.arc(lo.x, lo.y, 7, 0, TAU);
         ctx.fill();
         ctx.fillStyle = col;
         ctx.beginPath();
-        ctx.arc(x - 1, y - 1, 7.5, 0, TAU);
-        ctx.fill();
-        ctx.fillStyle = 'rgba(255,255,255,0.65)';
-        ctx.beginPath();
-        ctx.arc(x - 3, y - 4, 2.6, 0, TAU);
+        ctx.arc(lo.x - 0.8, lo.y - 0.8, 5.2, 0, TAU);
         ctx.fill();
       }
+      // boca de entrada
+      const entry = SPIRAL_ENTRY;
+      ctx.fillStyle = 'rgba(35,33,28,0.28)';
+      ctx.beginPath();
+      ctx.ellipse(entry.x, entry.y, 27, 13, -0.25, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = PALETTE.teal;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.ellipse(entry.x, entry.y, 29, 15, -0.25, 0, TAU);
+      ctx.stroke();
+      ctx.strokeStyle = rgba('#ffffff', 0.55);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(entry.x - 3, entry.y - 3, 20, 8, -0.25, Math.PI * 0.9, Math.PI * 1.6);
+      ctx.stroke();
+      // salida
+      const exit = spiralLocal(1);
+      ctx.fillStyle = PALETTE.teal;
+      ctx.beginPath();
+      ctx.ellipse(exit.x, exit.y + 4, 20, 9, 0.2, 0, TAU);
+      ctx.fill();
     } else if (p.defId === 'bubble') {
       ctx.save();
       ctx.fillStyle = PALETTE.shadow;
@@ -725,7 +808,7 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
         ctx.fill();
       }
     }
-  });
+  }, !noExtrude, shade(base, -0.42));
 }
 
 function star(
@@ -801,7 +884,7 @@ export function getMarbleSprite(type: MarbleType): Sprite {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
-  });
+  }, false);
   marbleCache.set(type.id, s);
   return s;
 }

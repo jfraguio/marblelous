@@ -740,6 +740,9 @@ export class Game {
         this.audio.boost(pan);
         this.spawnBurst(e.x, e.y, PALETTE.teal, 3, 0);
         this.score(2, e.x, e.y, e.marbleId, now);
+      } else if (e.type === 'spiral') {
+        this.audio.portal(pan);
+        this.spawnBurst(e.x, e.y, PALETTE.teal, 8, 1);
       } else if (e.type === 'portal') {
         this.audio.portal(pan);
         this.spawnBurst(e.x, e.y, PALETTE.purple, 10, 1);
