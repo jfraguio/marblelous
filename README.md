@@ -7,8 +7,10 @@ Un taller infinito de canicas, rampas y música. Hecho para jugar en iPad con el
 Abre la página publicada en GitHub Pages:
 
 ```
-https://jfraguio.github.io/marblelous/
+https://fraguio.com/marblelous/
 ```
+
+La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al dominio configurado.
 
 - Arrastra piezas desde la bandeja al lienzo.
 - Toca una pieza para seleccionarla; usa los botones flotantes para rotar o borrar.
