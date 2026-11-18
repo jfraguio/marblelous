@@ -304,10 +304,6 @@ export class AudioEngine {
       this.noiseBurst(0.03, 3200, 0.04 * v, panX, 'highpass');
       return;
     }
-    if (material === 'loop') {
-      this.tone(240, 0.06, 0.05 * v, panX, 'triangle');
-      return;
-    }
     this.tone(135 + Math.random() * 35, 0.07, 0.09 * v, panX, 'sine');
     this.noiseBurst(0.028, 900, 0.035 * v, panX);
   }
@@ -355,14 +351,6 @@ export class AudioEngine {
     this.noiseBurst(0.1, 1400, 0.07, panX, 'bandpass');
     this.tone(260, 0.2, 0.08, panX, 'sine', 760);
     this.tone(620, 0.16, 0.035, panX, 'triangle', 980);
-  }
-
-  loop(panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
-    this.noiseBurst(0.32, 1200, 0.05, panX);
-    this.tone(330, 0.28, 0.04, panX, 'sine', 660);
-    this.tone(495, 0.24, 0.028, panX, 'sine', 990);
   }
 
   goal(panX: number) {

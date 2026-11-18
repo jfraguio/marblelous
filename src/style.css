@@ -254,15 +254,6 @@ button:focus-visible {
 }
 .tool-stack .ibtn .ic { width: 20px; height: 20px; }
 
-/* left handed */
-.lefty .side-left {
-  left: auto;
-  right: calc(14px + var(--safe-right));
-  align-items: flex-end;
-}
-.lefty .topbar { flex-direction: row-reverse; }
-.lefty .top-actions { margin-left: 0; margin-right: auto; }
-
 /* ---------- Selection ---------- */
 
 .selection-ui {
@@ -291,8 +282,6 @@ button:focus-visible {
 .sel-btn:active { transform: scale(.92); }
 .sel-btn .ic { width: 22px; height: 22px; }
 .sel-btn.danger { background: var(--red); }
-.sel-btn.color-btn { background: var(--paper-3); border-color: var(--ink); }
-.sel-btn.color-btn span { width: 24px; height: 24px; border-radius: 50%; background: var(--blue); box-shadow: inset 0 -2px 0 rgba(35,33,28,.16), 0 0 0 2px var(--paper-3); display: block; }
 
 /* ---------- Tray ---------- */
 
@@ -566,93 +555,6 @@ button:focus-visible {
   65% { transform: translateX(4px); }
 }
 
-/* ---------- Challenges ---------- */
-
-.challenge-grid {
-  flex: 1;
-  touch-action: pan-y;
-  overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 12px;
-  padding: 16px;
-  align-content: start;
-  overscroll-behavior: contain;
-}
-.ch-card {
-  background: var(--paper-3);
-  border: 1.5px solid var(--line);
-  border-radius: 22px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
-  position: relative;
-  min-height: 190px;
-  transition: transform .16s;
-}
-.ch-ring {
-  width: 106px;
-  height: 106px;
-  border-radius: 50%;
-  background: conic-gradient(var(--green) calc(var(--p, 0) * 1%), var(--paper-2) 0);
-  display: grid;
-  place-items: center;
-  position: relative;
-  margin-top: 2px;
-}
-.ch-ring::before {
-  content: "";
-  position: absolute;
-  inset: 7px;
-  border-radius: 50%;
-  background: var(--paper-3);
-}
-.ch-ring canvas { width: 82px; height: 82px; position: relative; z-index: 1; }
-.ch-num {
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: -.03em;
-  color: var(--ink);
-  position: relative;
-  z-index: 1;
-}
-.ch-reward {
-  margin-top: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 13px;
-  font-weight: 800;
-  color: var(--ink-soft);
-}
-.ch-reward .ic { width: 14px; height: 14px; color: var(--yellow); }
-.ch-card.done { background: #f3f7f2; border-color: rgba(79,157,105,.35); }
-.ch-card.done .ch-ring { background: var(--green); }
-.ch-card.done .ch-ring::before { background: #f3f7f2; }
-.ch-card.done canvas { opacity: .45; }
-.ch-medal {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--yellow);
-  color: var(--ink);
-  display: grid;
-  place-items: center;
-  box-shadow: 0 2px 0 rgba(35,33,28,.1);
-  animation: medalIn .4s var(--ease);
-}
-.ch-medal .ic { width: 18px; height: 18px; }
-@keyframes medalIn {
-  0% { transform: scale(0) rotate(-25deg); }
-  70% { transform: scale(1.15) rotate(4deg); }
-  100% { transform: scale(1) rotate(0); }
-}
-
 /* ---------- Settings ---------- */
 
 .settings-body {
@@ -722,94 +624,12 @@ button:focus-visible {
   background: var(--dot, var(--blue));
 }
 .world-dot.on { border-color: var(--ink); }
+
 .reset-row { justify-content: center; }
 .reset-row .set-ic { background: rgba(217,93,57,.12); color: var(--red); }
 .set-row.tap { cursor: pointer; }
 .set-row.tap:active { transform: scale(.99); }
 .set-row .tiny { font-size: 11px; color: var(--muted); margin-left: auto; letter-spacing: .02em; }
-
-/* ---------- Pause ---------- */
-
-#pause {
-  background: rgba(242,239,231,.8);
-}
-.pause-card {
-  margin: auto;
-  width: min(360px, 86vw);
-  background: var(--paper);
-  border: 1.5px solid var(--line-strong);
-  border-radius: 32px;
-  box-shadow: 0 26px 70px rgba(35,33,28,.16);
-  padding: 26px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  animation: sheetIn .2s var(--ease);
-}
-.resume {
-  width: 118px;
-  height: 118px;
-  border-radius: 50%;
-  background: var(--ink);
-  color: var(--paper);
-  display: grid;
-  place-items: center;
-  box-shadow: 0 8px 0 rgba(35,33,28,.14);
-  transition: transform .14s;
-}
-.resume .ic { width: 46px; height: 46px; margin-left: 5px; }
-.resume:active { transform: scale(.94); }
-.pause-actions { display: flex; gap: 10px; }
-.pause-actions .ibtn { width: 54px; height: 54px; border-radius: 18px; }
-
-/* ---------- Tutorial ---------- */
-
-.tutorial {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  pointer-events: none;
-}
-.tutorial .hand {
-  position: absolute;
-  width: 64px;
-  height: 64px;
-  color: var(--ink);
-  filter: drop-shadow(0 4px 8px rgba(35,33,28,.12));
-  transition: left .3s var(--ease), top .3s var(--ease), transform .3s;
-  animation: handBob 1.7s ease-in-out infinite;
-}
-.tutorial .hand svg {
-  width: 100%;
-  height: 100%;
-  fill: var(--paper-3);
-  stroke: currentColor;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-@keyframes handBob {
-  0%,100% { transform: translateY(0); }
-  50% { transform: translateY(-7px); }
-}
-.tutorial .skip {
-  position: absolute;
-  top: calc(12px + var(--safe-top));
-  left: 50%;
-  transform: translateX(-50%);
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: var(--paper-3);
-  border: 1.5px solid var(--line);
-  color: var(--muted);
-  display: grid;
-  place-items: center;
-  pointer-events: auto;
-  opacity: .7;
-}
-.tutorial .skip .ic { width: 18px; height: 18px; }
 
 /* ---------- Toast / summary ---------- */
 
@@ -889,11 +709,7 @@ button:focus-visible {
   .tray { gap: 7px; }
   .sheet { border-radius: 24px; }
   .shop-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 9px; padding: 12px; }
-  .challenge-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 9px; padding: 12px; }
   .shop-card { min-height: 150px; }
-  .ch-card { min-height: 170px; }
-  .ch-ring { width: 92px; height: 92px; }
-  .ch-ring canvas { width: 70px; height: 70px; }
 }
 
 @media (max-height: 560px) and (orientation: landscape) {
@@ -912,35 +728,11 @@ button:focus-visible {
   }
 }
 
-.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
-  animation-duration: .001ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: .001ms !important;
-}
-
 .is-hidden { display: none !important; }
 
-/* tutorial target pulse */
-.tut-target {
-  animation: tutPulse 1.25s var(--ease) infinite !important;
-}
-@keyframes tutPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(233,180,76,.55), 0 3px 0 rgba(35,33,28,.07); }
-  50% { box-shadow: 0 0 0 9px rgba(233,180,76,0), 0 3px 0 rgba(35,33,28,.07); }
-}
 .set-row.holding {
   background: rgba(217,93,57,.08) !important;
   border-color: rgba(217,93,57,.35) !important;
-}
-
-@media (max-width: 520px) {
-  .tutorial .skip {
-    top: auto;
-    bottom: calc(110px + var(--safe-bottom));
-    left: auto;
-    right: calc(12px + var(--safe-right));
-    transform: none;
-  }
 }
 
 body.armed #game { cursor: crosshair; }

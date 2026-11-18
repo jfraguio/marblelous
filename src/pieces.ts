@@ -45,7 +45,6 @@ interface Mat {
 
 export const MATERIALS: Record<string, Mat> = {
   brick: { e: 0.35, mu: 0.45, roll: 0.8, mat: 'brick' },
-  loop: { e: 0.06, mu: 0.0, roll: 0.0, mat: 'loop' },
   rubber: { e: 0.92, mu: 0.6, roll: 1.2, mat: 'rubber' },
   chime: { e: 0.35, mu: 0.3, roll: 0.5, mat: 'chime' },
   conveyor: { e: 0.1, mu: 0.9, roll: 1.4, mat: 'conveyor' },
@@ -224,11 +223,6 @@ function arcColliders(
   }
 }
 
-export const LOOP_RADIUS = 80;
-export const LOOP_START = (108 * P) / 180;
-export const LOOP_END = (432 * P) / 180;
-export const LOOP_GAP = 36 * (P / 180);
-
 export const RAMP_CURVE_RADIUS = 100;
 export const RAMP_CURVE_START = P;
 export const RAMP_CURVE_END = 1.5 * P;
@@ -276,51 +270,6 @@ export const SPIRAL_ENTRY = spiralLocal(0);
 
 const defs: PieceDef[] = [
   {
-    id: 'brick2',
-    category: 'build',
-    price: 0,
-    label: 'Ladrillo 2×1',
-    w: 80,
-    h: 40,
-    tintable: true,
-    defaultColor: 0,
-    build: (p) => {
-      const c: Collider[] = [];
-      rectColliders(c, p, 80, 40, 4, 'brick');
-      return { colliders: c, triggers: [] };
-    }
-  },
-  {
-    id: 'brick4',
-    category: 'build',
-    price: 0,
-    label: 'Ladrillo 4×1',
-    w: 160,
-    h: 40,
-    tintable: true,
-    defaultColor: 0,
-    build: (p) => {
-      const c: Collider[] = [];
-      rectColliders(c, p, 160, 40, 4, 'brick');
-      return { colliders: c, triggers: [] };
-    }
-  },
-  {
-    id: 'plate4',
-    category: 'build',
-    price: 100,
-    label: 'Placa 4×1',
-    w: 160,
-    h: 20,
-    tintable: true,
-    defaultColor: 0,
-    build: (p) => {
-      const c: Collider[] = [];
-      rectColliders(c, p, 160, 20, 4, 'brick');
-      return { colliders: c, triggers: [] };
-    }
-  },
-  {
     id: 'ramp',
     category: 'build',
     price: 0,
@@ -362,21 +311,6 @@ const defs: PieceDef[] = [
     build: (p) => {
       const c: Collider[] = [];
       addCap(c, p, -52, 0, 52, 0, 6, 'rubber');
-      return { colliders: c, triggers: [] };
-    }
-  },
-  {
-    id: 'loop',
-    category: 'build',
-    price: 700,
-    label: 'Bucle',
-    w: 180,
-    h: 180,
-    tintable: false,
-    defaultColor: 1,
-    build: (p) => {
-      const c: Collider[] = [];
-      arcColliders(c, p, LOOP_RADIUS, LOOP_START, LOOP_END, 128, 5, 'loop');
       return { colliders: c, triggers: [] };
     }
   },
@@ -682,28 +616,6 @@ const defs: PieceDef[] = [
     }
   },
   {
-    id: 'xylo3',
-    category: 'music',
-    price: 0,
-    label: 'Xilófono de 3 notas',
-    w: 280,
-    h: 64,
-    tintable: false,
-    defaultColor: 0,
-    build: (p) => {
-      const c: Collider[] = [];
-      const layout = xyloLayout(3);
-      for (let i = 0; i < layout.widths.length; i++) {
-        const w = layout.widths[i];
-        addCap(c, p, layout.xs[i] - w / 2 + 1, -4, layout.xs[i] + w / 2 - 1, -4, 7, 'chime', {
-          note: i,
-          chime: true
-        });
-      }
-      return { colliders: c, triggers: [] };
-    }
-  },
-  {
     id: 'xylo5',
     category: 'music',
     price: 650,
@@ -804,13 +716,9 @@ export function pieceCorners(p: Piece): Vec2[] {
 }
 
 export const SHOP_ITEMS: ShopItem[] = [
-  { id: 'brick2', category: 'build', price: 0, label: 'Ladrillo 2×1', kind: 'piece' },
-  { id: 'brick4', category: 'build', price: 0, label: 'Ladrillo 4×1', kind: 'piece' },
-  { id: 'plate4', category: 'build', price: 100, label: 'Placa 4×1', kind: 'piece' },
   { id: 'ramp', category: 'build', price: 0, label: 'Rampa', kind: 'piece' },
   { id: 'rampCurve', category: 'build', price: 250, label: 'Rampa curva', kind: 'piece' },
   { id: 'trampoline', category: 'build', price: 300, label: 'Trampolín', kind: 'piece' },
-  { id: 'loop', category: 'build', price: 700, label: 'Bucle', kind: 'piece' },
   { id: 'halfPipe', category: 'build', price: 800, label: 'Medio tubo', kind: 'piece' },
   { id: 'funnel', category: 'build', price: 550, label: 'Embudo', kind: 'piece' },
   { id: 'conveyor', category: 'build', price: 850, label: 'Cinta', kind: 'piece' },
@@ -818,7 +726,6 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'bubble', category: 'energy', price: 0, label: 'Burbuja', kind: 'piece' },
   { id: 'portal', category: 'energy', price: 0, label: 'Portales', kind: 'piece' },
   { id: 'fan', category: 'energy', price: 0, label: 'Ventilador', kind: 'piece' },
-  { id: 'xylo3', category: 'music', price: 0, label: 'Xilófono 3', kind: 'piece' },
   { id: 'xylo5', category: 'music', price: 650, label: 'Xilófono 5', kind: 'piece' },
   { id: 'xylo8', category: 'music', price: 1100, label: 'Xilófono 8', kind: 'piece' },
   { id: 'booster', category: 'energy', price: 600, label: 'Propulsor', kind: 'piece' },

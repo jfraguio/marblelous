@@ -19,7 +19,7 @@ import {
   xyloLayout
 } from './pieces';
 import { PostFX } from './postfx';
-import { clamp, lerp, rgba, TAU, CAMERA_TILT } from './util';
+import { clamp, lerp, prefersReducedMotion, rgba, TAU, CAMERA_TILT } from './util';
 
 interface Dust {
   x: number;
@@ -113,7 +113,7 @@ export class Renderer {
     const w = this.width;
     const h = this.height;
     const dpr = this.dpr;
-    const reduced = g.settings.reduceMotion;
+    const reduced = prefersReducedMotion();
     const dt = Math.min(0.05, Math.max(0, (now - this.lastRender) / 1000));
     this.lastRender = now;
     const zoom = cam.zoom;
@@ -471,8 +471,8 @@ export class Renderer {
       const age = now - p.flash;
       if (age >= 0 && age < 140) {
         const a = (1 - age / 140) * 0.75;
-        if (p.defId === 'xylo3' || p.defId === 'xylo5' || p.defId === 'xylo8') {
-          const n = p.defId === 'xylo3' ? 3 : p.defId === 'xylo5' ? 5 : 8;
+        if (p.defId === 'xylo5' || p.defId === 'xylo8') {
+          const n = p.defId === 'xylo5' ? 5 : 8;
           const layout = xyloLayout(n);
           const note = p.flashNote ?? -1;
           const idx = note >= 0 ? note : 0;

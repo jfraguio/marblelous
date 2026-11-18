@@ -1,6 +1,5 @@
 import type {
   Camera,
-  ChallengeDef,
   DropSummary,
   Marble,
   Mode,
@@ -34,25 +33,9 @@ const SAVE_KEY = 'marblelous.save.v1';
 const BACKUP_KEY = 'marblelous.backup.v1';
 const FIXED = 1 / 120;
 
-export const CHALLENGES: ChallengeDef[] = [
-  { id: 'firstGoal', target: 1, reward: 300, preview: 'goal', previewType: 'piece', label: 'Primer viaje', perDrop: false },
-  { id: 'notes5', target: 5, reward: 500, preview: 'xylo5', previewType: 'piece', label: 'Escalera musical', perDrop: true },
-  { id: 'loop1', target: 1, reward: 500, preview: 'loop', previewType: 'piece', label: 'El bucle', perDrop: true },
-  { id: 'air2', target: 2000, reward: 400, preview: 'air', previewType: 'icon', icon: 'air', label: 'Vuelo', perDrop: true },
-  { id: 'tramp8', target: 8, reward: 400, preview: 'trampoline', previewType: 'piece', label: 'Cama elástica', perDrop: true },
-  { id: 'build50', target: 50, reward: 300, preview: 'brick4', previewType: 'piece', label: 'Constructor', perDrop: false },
-  { id: 'marbles20', target: 20, reward: 450, preview: 'crystal', previewType: 'marble', label: 'Lluvia', perDrop: true },
-  { id: 'goals10', target: 10, reward: 600, preview: 'goal', previewType: 'piece', label: 'Diana', perDrop: false },
-  { id: 'combo4', target: 4, reward: 600, preview: 'spark', previewType: 'icon', icon: 'spark', label: 'Combo', perDrop: true },
-  { id: 'speed2500', target: 2500, reward: 500, preview: 'booster', previewType: 'piece', label: 'Cohete', perDrop: true },
-  { id: 'bricks25', target: 25, reward: 350, preview: 'brick2', previewType: 'piece', label: 'Torre', perDrop: false },
-  { id: 'lifetime10k', target: 10000, reward: 750, preview: 'spark', previewType: 'icon', icon: 'spark', label: 'Maratón', perDrop: false }
-];
-
 interface DropStats {
   sparks: number;
   notes: Set<number>;
-  loops: number;
   goals: number;
   tramps: number;
   maxCombo: number;
@@ -70,7 +53,6 @@ type History =
   | { type: 'move'; id: number; fromX: number; fromY: number; toX: number; toY: number }
   | { type: 'rotate'; id: number; from: number; to: number }
   | { type: 'size'; id: number; from: number; to: number }
-  | { type: 'color'; id: number; from: number; to: number }
   | { type: 'clear'; pieces: Piece[] };
 
 export class Game {
@@ -93,10 +75,8 @@ export class Game {
   armedDefId = '';
   selectedPieceId = 0;
   selectedMarble = 'crystal';
-  color = 0;
   ghost: Ghost | null = null;
   dropPreview: { x: number; y: number } | null = null;
-  paused = false;
   overlayOpen = false;
   hidden = false;
   private overlayPaused = false;
@@ -112,19 +92,13 @@ export class Game {
     airTime: 0,
     marbles: 0,
     bestDrop: 0,
-    loops: 0,
     goals: 0
   };
   settings: Settings = {
     sound: 2,
     quality: 'auto',
-    leftHanded: false,
-    reduceMotion: false,
-    haptics: false,
-    tutorialSeen: false
+    haptics: false
   };
-  challenges: Record<string, number> = {};
-  tutorialStep = 0;
 
   comboChain = 0;
   comboMultiplier = 1;
@@ -175,7 +149,6 @@ export class Game {
     return {
       sparks: 0,
       notes: new Set<number>(),
-      loops: 0,
       goals: 0,
       tramps: 0,
       maxCombo: 1,
@@ -256,10 +229,6 @@ export class Game {
     this.overlayPaused = open;
   }
 
-  setPaused(p: boolean) {
-    this.paused = p;
-  }
-
   // ---------------- camera ----------------
 
   setViewport(w: number, h: number) {
@@ -330,7 +299,6 @@ export class Game {
     this.ghost = null;
     this.dropPreview = null;
     this.audio.ui();
-    if (mode === 'play' && this.tutorialStep < 3) this.advanceTutorial(3);
     this.ui?.refreshTray();
     this.ui?.refreshMode();
     this.ui?.updateSelection();
@@ -350,7 +318,6 @@ export class Game {
     this.dropPreview = null;
     document.body.classList.add('armed');
     this.audio.ui();
-    if (this.tutorialStep === 0) this.advanceTutorial(1);
     this.ui?.refreshTray();
     this.ui?.refreshMode();
     this.ui?.updateSelection();
@@ -392,7 +359,7 @@ export class Game {
       return null;
     }
     const p = makePiece(this.nextId++, defId, x, y, rot);
-    if (getPieceDef(defId).tintable) p.color = this.color;
+    if (getPieceDef(defId).tintable) p.color = Math.floor(Math.random() * COLORS.length);
     this.pieces.push(p);
     this.physics.rebuild(this.pieces);
     if (commit) {
@@ -405,9 +372,7 @@ export class Game {
       this.spawnBurst(x, y, PALETTE.blue, 5, 0);
     }
     this.selectPiece(p.id);
-    this.updateBuildChallenges();
     this.ui?.refreshHud();
-    if (this.tutorialStep === 1) this.advanceTutorial(2);
     return p;
   }
 
@@ -425,7 +390,6 @@ export class Game {
     this.spawnBurst(p.x, p.y, PALETTE.muted, 5, 0);
     this.dirty = true;
     this.requestSave();
-    this.updateBuildChallenges();
     this.ui?.updateSelection();
     this.ui?.refreshHud();
   }
@@ -461,19 +425,6 @@ export class Game {
       this.dirty = true;
       this.requestSave();
     }
-  }
-
-  setPieceColor(p: Piece, color: number, commit = false, from = 0) {
-    p.color = color;
-    this.color = color;
-    if (commit && color !== from) {
-      this.history.push({ type: 'color', id: p.id, from, to: color });
-      this.history = this.history.slice(-60);
-      this.redoStack.length = 0;
-      this.dirty = true;
-      this.requestSave();
-    }
-    this.ui?.updateSelection();
   }
 
   setPieceLen(p: Piece, len: number, commit = false, from = 0) {
@@ -529,7 +480,6 @@ export class Game {
     this.spawnBurst(clone.x, clone.y, PALETTE.yellow, 6, 0);
     this.dirty = true;
     this.requestSave();
-    this.updateBuildChallenges();
     this.ui?.refreshHud();
     return clone;
   }
@@ -555,7 +505,6 @@ export class Game {
     this.spawnBurst(this.camera.x, this.camera.y, PALETTE.muted, 12, 0);
     this.dirty = true;
     this.requestSave();
-    this.updateBuildChallenges();
     this.ui?.refreshAll();
     this.ui?.toast('trash');
   }
@@ -607,9 +556,6 @@ export class Game {
     } else if (h.type === 'size') {
       const p = this.pieces.find((x) => x.id === h.id);
       if (p) p.len = undo ? h.from : h.to;
-    } else if (h.type === 'color') {
-      const p = this.pieces.find((x) => x.id === h.id);
-      if (p) p.color = undo ? h.from : h.to;
     } else if (h.type === 'clear') {
       this.pieces = undo ? h.pieces : [];
     }
@@ -617,7 +563,6 @@ export class Game {
     this.worlds[this.activeWorld].pieces = this.pieces;
     this.physics.rebuild(this.pieces);
     this.wakeMarbles();
-    this.updateBuildChallenges();
     this.ui?.updateSelection();
     this.ui?.refreshTray();
   }
@@ -647,10 +592,8 @@ export class Game {
       this.ui?.refreshTray();
     }
     this.records.marbles = Math.max(this.records.marbles, this.marbles.length);
-    this.updateChallenge('marbles20', this.marbles.length);
     this.dropStats.maxSpeed = Math.max(this.dropStats.maxSpeed, 0);
     this.spawnBurst(x, y, type.color, 4, 0);
-    if (this.tutorialStep <= 3) this.advanceTutorial(4);
     this.dirty = true;
     return m;
   }
@@ -713,7 +656,6 @@ export class Game {
         this.audio.playChime(e.note, e.impact, pan);
         this.spawnBurst(e.x, e.y, NOTE_COLORS[e.note] ?? PALETTE.yellow, 5, 1);
         this.dropStats.notes.add(e.note);
-        this.updateChallenge('notes5', this.dropStats.notes.size);
         this.score(5, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'trampoline') {
         if (!this.allow(`tramp:${e.marbleId}:${e.pieceId}`, 340, now)) continue;
@@ -722,7 +664,6 @@ export class Game {
         this.audio.trampoline(e.impact, pan);
         this.spawnBurst(e.x, e.y, PALETTE.green, 5, 0);
         this.dropStats.tramps++;
-        this.updateChallenge('tramp8', this.dropStats.tramps);
         this.score(8, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'bumper') {
         if (!this.allow(`bump:${e.marbleId}:${e.pieceId}`, 240, now)) continue;
@@ -748,15 +689,6 @@ export class Game {
         this.spawnBurst(e.x, e.y, PALETTE.purple, 10, 1);
         this.spawnBurst(e.x, e.y, PALETTE.teal, 6, 0);
         this.score(5, e.x, e.y, e.marbleId, now);
-      } else if (e.type === 'loop') {
-        if (!this.allow(`loop:${e.marbleId}:${e.pieceId}`, 2600, now)) continue;
-        this.audio.loop(pan);
-        this.spawnBurst(e.x, e.y, PALETTE.red, 18, 1);
-        this.dropStats.loops++;
-        this.records.loops++;
-        this.updateChallenge('loop1', this.dropStats.loops);
-        this.score(60, e.x, e.y, e.marbleId, now);
-        this.ui?.flash(0.16);
       } else if (e.type === 'goal') {
         const m = this.marbles.find((x) => x.id === e.marbleId);
         this.audio.goal(pan);
@@ -765,8 +697,6 @@ export class Game {
         this.spawnConfetti(e.x, e.y - 20);
         this.dropStats.goals++;
         this.records.goals++;
-        this.updateChallenge('goals10', this.records.goals);
-        this.updateChallenge('firstGoal', this.records.goals);
         this.score(120, e.x, e.y, e.marbleId, now);
         if (m) m.alive = false;
         this.ui?.flash(0.22);
@@ -782,7 +712,6 @@ export class Game {
         const pts = Math.min(60, Math.round((secs - 1.2) * 20));
         this.dropStats.airTime = Math.max(this.dropStats.airTime, e.impact);
         this.records.airTime = Math.max(this.records.airTime, e.impact);
-        this.updateChallenge('air2', this.records.airTime);
         if (pts > 0) this.score(pts, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'marble') {
         if (!this.allow(`marble:${e.marbleId}`, 100, now)) continue;
@@ -806,8 +735,6 @@ export class Game {
     this.dropStats.sparks += pts;
     this.dropStats.maxCombo = Math.max(this.dropStats.maxCombo, this.comboMultiplier);
     this.records.combo = Math.max(this.records.combo, this.comboMultiplier);
-    this.updateChallenge('combo4', this.records.combo);
-    this.updateChallenge('lifetime10k', this.lifetime);
     this.spawnPopup(x, y - 14, `+${pts}`);
     this.dirty = true;
     this.ui?.refreshHud();
@@ -838,7 +765,6 @@ export class Game {
     }
     if (max > this.records.speed) {
       this.records.speed = max;
-      this.updateChallenge('speed2500', max);
       this.dirty = true;
     }
     if (this.dropStats.maxSpeed < max) this.dropStats.maxSpeed = max;
@@ -916,16 +842,10 @@ export class Game {
     this.dropActive = false;
     const stats = this.dropStats;
     this.records.bestDrop = Math.max(this.records.bestDrop, stats.sparks);
-    this.updateChallenge('combo4', stats.maxCombo);
-    this.updateChallenge('air2', stats.airTime);
-    this.updateChallenge('notes5', stats.notes.size);
-    this.updateChallenge('loop1', stats.loops);
-    this.updateChallenge('tramp8', stats.tramps);
     if (stats.sparks > 0 || stats.notes.size > 0) {
       const summary: DropSummary = {
         sparks: stats.sparks,
         notes: stats.notes.size,
-        loops: stats.loops,
         goals: stats.goals,
         bestCombo: stats.maxCombo
       };
@@ -935,38 +855,10 @@ export class Game {
     this.requestSave();
   }
 
-  private updateBuildChallenges() {
-    this.updateChallenge('build50', this.pieces.length);
-    const bricks = this.pieces.filter((p) => p.defId === 'brick2' || p.defId === 'brick4' || p.defId === 'plate4').length;
-    this.updateChallenge('bricks25', bricks);
-  }
-
-  private updateChallenge(id: string, value: number) {
-    const def = CHALLENGES.find((c) => c.id === id);
-    if (!def) return;
-    const prev = this.challenges[id] ?? 0;
-    if (value <= prev) return;
-    this.challenges[id] = Math.min(def.target, value);
-    if (prev < def.target && value >= def.target) {
-      this.challenges[id] = def.target;
-      this.currency += def.reward;
-      this.lifetime += def.reward;
-      this.audio.medal();
-      this.ui?.toast('trophy', `+${def.reward}`);
-      this.ui?.refreshChallenges();
-      this.ui?.refreshHud();
-      this.ui?.flash(0.18);
-      this.dirty = true;
-      this.requestSave();
-    } else {
-      this.dirty = true;
-    }
-  }
-
   // ---------------- effects ----------------
 
   spawnBurst(x: number, y: number, color: string, count: number, kind: number) {
-    const reduce = this.settings.reduceMotion;
+    const reduce = prefersReducedMotion();
     const n = reduce ? Math.min(4, count) : count;
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -990,7 +882,7 @@ export class Game {
   }
 
   spawnConfetti(x: number, y: number) {
-    const reduce = this.settings.reduceMotion;
+    const reduce = prefersReducedMotion();
     const n = reduce ? 5 : 20;
     const colors = [PALETTE.red, PALETTE.yellow, PALETTE.teal, PALETTE.green, PALETTE.pink, PALETTE.blue];
     for (let i = 0; i < n; i++) {
@@ -1069,43 +961,9 @@ export class Game {
     return this.owned.has(id);
   }
 
-  // ---------------- tutorial ----------------
-
-  advanceTutorial(step: number) {
-    if (this.settings.tutorialSeen) return;
-    if (step > this.tutorialStep) {
-      this.tutorialStep = step;
-      if (step >= 4) {
-        this.tutorialStep = 4;
-        this.settings.tutorialSeen = true;
-      }
-      this.dirty = true;
-      this.requestSave();
-      this.ui?.updateTutorial();
-    }
-  }
-
-  skipTutorial() {
-    this.tutorialStep = 4;
-    this.settings.tutorialSeen = true;
-    this.dirty = true;
-    this.requestSave();
-    this.ui?.updateTutorial();
-  }
-
-  restartTutorial() {
-    this.tutorialStep = 0;
-    this.settings.tutorialSeen = false;
-    this.dirty = true;
-    this.requestSave();
-    this.ui?.updateTutorial();
-  }
-
   // ---------------- settings ----------------
 
   applySettings() {
-    document.body.classList.toggle('lefty', this.settings.leftHanded);
-    document.body.classList.toggle('reduce-motion', this.settings.reduceMotion);
     this.audio.setLevel(this.settings.sound);
   }
 
@@ -1127,24 +985,6 @@ export class Game {
     const order: Settings['quality'][] = ['auto', 'high', 'low'];
     const i = order.indexOf(this.settings.quality);
     this.settings.quality = order[(i + 1) % order.length];
-    this.dirty = true;
-    this.requestSave();
-    this.ui?.refreshSettings();
-    this.audio.ui();
-  }
-
-  toggleLefty() {
-    this.settings.leftHanded = !this.settings.leftHanded;
-    this.applySettings();
-    this.dirty = true;
-    this.requestSave();
-    this.ui?.refreshSettings();
-    this.audio.ui();
-  }
-
-  toggleReduceMotion() {
-    this.settings.reduceMotion = !this.settings.reduceMotion;
-    this.applySettings();
     this.dirty = true;
     this.requestSave();
     this.ui?.refreshSettings();
@@ -1173,7 +1013,6 @@ export class Game {
       airTime: 0,
       marbles: 0,
       bestDrop: 0,
-      loops: 0,
       goals: 0
     };
     if (!this.worlds[i].records) this.worlds[i].records = this.records;
@@ -1243,7 +1082,7 @@ export class Game {
     const empty = (): WorldData => ({
       pieces: [],
       camera: { x: 0, y: 0, zoom: 1 },
-      records: { combo: 1, speed: 0, airTime: 0, marbles: 0, bestDrop: 0, loops: 0, goals: 0 }
+      records: { combo: 1, speed: 0, airTime: 0, marbles: 0, bestDrop: 0, goals: 0 }
     });
     return {
       v: 1,
@@ -1260,24 +1099,18 @@ export class Game {
       settings: {
         sound: 2,
         quality: 'auto',
-        leftHanded: false,
-        reduceMotion: prefersReducedMotion(),
-        haptics: false,
-        tutorialSeen: false
+        haptics: false
       },
-      challenges: {},
-      tutorialStep: 0,
-      selectedMarble: 'crystal',
-      color: 0
+      selectedMarble: 'crystal'
     };
   }
 
   private starterPieces(): Piece[] {
     return [
       makePiece(1, 'ramp', -140, -70, 0.44, 220),
-      makePiece(2, 'xylo3', 80, 20, 0.1),
+      makePiece(2, 'xylo5', 80, 20, 0.1),
       makePiece(3, 'goal', 300, 88, 0),
-      makePiece(4, 'brick4', 300, 160, 0)
+      makePiece(4, 'trampoline', 300, 160, 0)
     ];
   }
 
@@ -1300,7 +1133,14 @@ export class Game {
         };
         pieces.push(p);
       }
-      const rec = { ...fallback.worlds[0].records, ...(w.records ?? {}) };
+      const rec = {
+        combo: Math.max(1, Number(w.records?.combo) || 1),
+        speed: Math.max(0, Number(w.records?.speed) || 0),
+        airTime: Math.max(0, Number(w.records?.airTime) || 0),
+        marbles: Math.max(0, Number(w.records?.marbles) || 0),
+        bestDrop: Math.max(0, Number(w.records?.bestDrop) || 0),
+        goals: Math.max(0, Number(w.records?.goals) || 0)
+      };
       worlds.push({
         pieces,
         camera: {
@@ -1321,11 +1161,12 @@ export class Game {
       owned: [...owned],
       activeWorld: clamp(Number(data.activeWorld) || 0, 0, 2),
       worlds,
-      settings: { ...fallback.settings, ...(data.settings ?? {}) },
-      challenges: data.challenges ?? {},
-      tutorialStep: clamp(Number(data.tutorialStep) || 0, 0, 4),
-      selectedMarble: MARBLE_BY_ID.has(data.selectedMarble) ? data.selectedMarble : 'crystal',
-      color: clamp(Number(data.color) || 0, 0, COLORS.length - 1)
+      settings: {
+        sound: (data.settings?.sound ?? fallback.settings.sound) as Settings['sound'],
+        quality: (data.settings?.quality ?? fallback.settings.quality) as Settings['quality'],
+        haptics: !!(data.settings?.haptics ?? fallback.settings.haptics)
+      },
+      selectedMarble: MARBLE_BY_ID.has(data.selectedMarble) ? data.selectedMarble : 'crystal'
     };
   }
 
@@ -1340,10 +1181,7 @@ export class Game {
     this.camera = this.worlds[this.activeWorld].camera;
     this.records = this.worlds[this.activeWorld].records;
     this.settings = data.settings;
-    this.challenges = data.challenges;
-    this.tutorialStep = data.tutorialStep;
     this.selectedMarble = data.selectedMarble;
-    this.color = data.color;
     this.nextId = Math.max(0, ...this.pieces.map((p) => p.id)) + 1;
   }
 
@@ -1373,10 +1211,7 @@ export class Game {
         records: { ...w.records }
       })),
       settings: { ...this.settings },
-      challenges: { ...this.challenges },
-      tutorialStep: this.tutorialStep,
-      selectedMarble: this.selectedMarble,
-      color: this.color
+      selectedMarble: this.selectedMarble
     };
     try {
       const prev = localStorage.getItem(SAVE_KEY);

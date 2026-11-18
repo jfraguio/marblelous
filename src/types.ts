@@ -12,7 +12,7 @@ export interface Camera {
 export type Mode = 'build' | 'play';
 export type PieceCategory = 'build' | 'music' | 'energy';
 export type ShopCategory = PieceCategory | 'marbles';
-export type MaterialId = 'brick' | 'loop' | 'rubber' | 'chime' | 'conveyor' | 'metal' | 'field';
+export type MaterialId = 'brick' | 'rubber' | 'chime' | 'conveyor' | 'metal' | 'field';
 
 export interface Piece {
   id: number;
@@ -127,7 +127,6 @@ export interface Marble {
   rideNextChime: number;
   rideScale: number;
   rideDepth: number;
-  loopData: Map<number, { last: number; total: number; awarded: boolean; out: number }>;
 }
 
 export interface PieceDef {
@@ -152,7 +151,6 @@ export interface PhysEvent {
     | 'trampoline'
     | 'bumper'
     | 'cannon'
-    | 'loop'
     | 'goal'
     | 'star'
     | 'boost'
@@ -200,17 +198,13 @@ export interface Records {
   airTime: number;
   marbles: number;
   bestDrop: number;
-  loops: number;
   goals: number;
 }
 
 export interface Settings {
   sound: 0 | 1 | 2;
   quality: 'auto' | 'high' | 'low';
-  leftHanded: boolean;
-  reduceMotion: boolean;
   haptics: boolean;
-  tutorialSeen: boolean;
 }
 
 export interface WorldData {
@@ -228,21 +222,7 @@ export interface SaveData {
   activeWorld: number;
   worlds: WorldData[];
   settings: Settings;
-  challenges: Record<string, number>;
-  tutorialStep: number;
   selectedMarble: string;
-  color: number;
-}
-
-export interface ChallengeDef {
-  id: string;
-  target: number;
-  reward: number;
-  preview: string;
-  previewType: 'piece' | 'marble' | 'icon';
-  label: string;
-  icon?: string;
-  perDrop: boolean;
 }
 
 export interface ShopItem {
@@ -256,7 +236,6 @@ export interface ShopItem {
 export interface DropSummary {
   sparks: number;
   notes: number;
-  loops: number;
   goals: number;
   bestCombo: number;
 }

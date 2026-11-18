@@ -4,9 +4,6 @@ import {
   FUNNEL_LEFT,
   FUNNEL_RIGHT,
   HALF_PIPE_RADIUS,
-  LOOP_END,
-  LOOP_RADIUS,
-  LOOP_START,
   MARBLE_TYPES,
   NOTE_COLORS,
   PALETTE,
@@ -162,8 +159,7 @@ function trimCache() {
 
 function colorFor(p: Piece): string {
   const d = getPieceDef(p.defId);
-  if (p.defId === 'xylo3' || p.defId === 'xylo5' || p.defId === 'xylo8') return PALETTE.wood;
-  if (p.defId === 'loop') return PALETTE.red;
+  if (p.defId === 'xylo5' || p.defId === 'xylo8') return PALETTE.wood;
   if (p.defId === 'trampoline') return PALETTE.green;
   if (p.defId === 'conveyor') return PALETTE.steel;
   if (p.defId === 'bumper') return PALETTE.red;
@@ -184,18 +180,15 @@ function spriteDims(p: Piece): { w: number; h: number } {
   switch (p.defId) {
     case 'ramp':
       return { w: p.len + 16, h: 26 };
-    case 'loop':
-      return { w: LOOP_RADIUS * 2 + 14, h: LOOP_RADIUS * 2 + 14 };
     case 'rampCurve':
       return { w: RAMP_CURVE_RADIUS * 2 + 18, h: RAMP_CURVE_RADIUS * 2 + 18 };
     case 'halfPipe':
       return { w: HALF_PIPE_RADIUS * 2 + 18, h: HALF_PIPE_RADIUS * 2 + 18 };
     case 'funnel':
       return { w: 200, h: 170 };
-    case 'xylo3':
     case 'xylo5':
     case 'xylo8': {
-      const n = p.defId === 'xylo3' ? 3 : p.defId === 'xylo5' ? 5 : 8;
+      const n = p.defId === 'xylo5' ? 5 : 8;
       const l = xyloLayout(n);
       return { w: l.total + 24, h: 62 };
     }
@@ -223,8 +216,6 @@ function spriteDims(p: Piece): { w: number; h: number } {
       return { w: 168, h: 28 };
     case 'trampoline':
       return { w: 128, h: 28 };
-    case 'plate4':
-      return { w: 168, h: 34 };
     default:
       return { w: getPieceDef(p.defId).w, h: getPieceDef(p.defId).h };
   }
@@ -304,58 +295,7 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
     const light = shade(c, 0.22);
     const ink = rgba(PALETTE.ink, 0.16);
 
-    const body = (w: number, h: number, rad: number, y = 0) => {
-      ctx.fillStyle = PALETTE.shadow;
-      rr(ctx, -w / 2 + 1, -h / 2 + 4 + y, w, h, rad);
-      ctx.fill();
-      ctx.fillStyle = c;
-      rr(ctx, -w / 2, -h / 2 + y, w, h, rad);
-      ctx.fill();
-      ctx.strokeStyle = dark;
-      ctx.lineWidth = 1.6;
-      ctx.stroke();
-      ctx.strokeStyle = rgba('#ffffff', 0.32);
-      ctx.lineWidth = 1.5;
-      rr(ctx, -w / 2 + 3, -h / 2 + y + 2.4, w - 6, Math.max(2, h - 6), Math.max(1, rad - 2));
-      ctx.stroke();
-      ctx.fillStyle = rgba(PALETTE.ink, 0.12);
-      rr(ctx, -w / 2 + 3, h / 2 + y - 5, w - 6, 3, 2);
-      ctx.fill();
-    };
-
-    const studs = (count: number, spacing: number, rad: number, y: number) => {
-      const start = -((count - 1) * spacing) / 2;
-      for (let i = 0; i < count; i++) {
-        const x = start + i * spacing;
-        ctx.fillStyle = PALETTE.shadow;
-        ctx.beginPath();
-        ctx.arc(x + 1, y + 3, rad, 0, TAU);
-        ctx.fill();
-        ctx.fillStyle = c;
-        ctx.beginPath();
-        ctx.arc(x, y, rad, 0, TAU);
-        ctx.fill();
-        ctx.strokeStyle = dark;
-        ctx.lineWidth = 1.3;
-        ctx.stroke();
-        ctx.strokeStyle = rgba('#ffffff', 0.4);
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.arc(x - rad * 0.18, y - rad * 0.16, rad * 0.56, Math.PI * 0.9, Math.PI * 1.9);
-        ctx.stroke();
-      }
-    };
-
-    if (p.defId === 'brick2' || p.defId === 'brick4') {
-      const w = p.defId === 'brick2' ? 80 : 160;
-      const count = p.defId === 'brick2' ? 2 : 4;
-      studs(count, 40, 11.5, -20 + 2);
-      body(w, 40, 6);
-    } else if (p.defId === 'plate4') {
-      const w = 160;
-      studs(4, 40, 8.5, -10 + 2);
-      body(w, 20, 5);
-    } else if (p.defId === 'ramp') {
+    if (p.defId === 'ramp') {
       const L = p.len;
       ctx.strokeStyle = PALETTE.shadow;
       ctx.lineWidth = 12;
@@ -411,35 +351,6 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       track(HALF_PIPE_RADIUS, 16, dark);
       track(HALF_PIPE_RADIUS, 12, c);
       track(HALF_PIPE_RADIUS + 4.2, 2.0, rgba('#ffffff', 0.3));
-    } else if (p.defId === 'loop') {
-      const track = (r: number, lw: number, col: string) => {
-        ctx.beginPath();
-        ctx.arc(0, 0, r, LOOP_START, LOOP_END);
-        ctx.strokeStyle = col;
-        ctx.lineWidth = lw;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-      };
-      ctx.save();
-      ctx.translate(1.5, 3);
-      track(LOOP_RADIUS, 10, PALETTE.shadow);
-      ctx.restore();
-      track(LOOP_RADIUS, 13, shade(PALETTE.red, -0.2));
-      track(LOOP_RADIUS, 9, PALETTE.red);
-      track(LOOP_RADIUS - 3.2, 1.8, rgba('#ffffff', 0.38));
-      // entry chevron
-      ctx.save();
-      ctx.translate(Math.cos((52 * Math.PI) / 180) * (LOOP_RADIUS + 9), Math.sin((52 * Math.PI) / 180) * (LOOP_RADIUS + 9));
-      ctx.rotate(0.4);
-      ctx.strokeStyle = rgba(PALETTE.ink, 0.5);
-      ctx.lineWidth = 2.4;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(-7, -5);
-      ctx.lineTo(0, 0);
-      ctx.lineTo(-7, 5);
-      ctx.stroke();
-      ctx.restore();
     } else if (p.defId === 'funnel') {
       const drawCurve = (pts: { x: number; y: number }[], col: string, off = 0) => {
         ctx.beginPath();
@@ -875,8 +786,8 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.fillStyle = PALETTE.teal;
       rr(ctx, -44, 76, 88, 16, 8);
       ctx.fill();
-    } else if (p.defId === 'xylo3' || p.defId === 'xylo5' || p.defId === 'xylo8') {
-      const n = p.defId === 'xylo3' ? 3 : p.defId === 'xylo5' ? 5 : 8;
+    } else if (p.defId === 'xylo5' || p.defId === 'xylo8') {
+      const n = p.defId === 'xylo5' ? 5 : 8;
       const layout = xyloLayout(n);
       ctx.fillStyle = PALETTE.shadow;
       rr(ctx, -layout.total / 2 - 9, 3, layout.total + 18, 30, 10);
@@ -1139,15 +1050,6 @@ function drawGlyph(ctx: CanvasRenderingContext2D, name: string, cx: number, cy: 
   ctx.lineJoin = 'round';
   if (name === 'spark') {
     star(ctx, 0, 0, r, r * 0.45, PALETTE.yellow, PALETTE.ink);
-  } else if (name === 'loop') {
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 0.75, -2.2, 2.2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(r * 0.55, -r * 0.8);
-    ctx.lineTo(r * 0.9, -r * 0.55);
-    ctx.lineTo(r * 0.55, -r * 0.25);
-    ctx.stroke();
   } else if (name === 'speed') {
     ctx.beginPath();
     ctx.moveTo(-r, -r * 0.5);

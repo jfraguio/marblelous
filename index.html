@@ -30,8 +30,6 @@
         </div>
 
         <nav class="top-actions">
-          <button class="ibtn" id="btn-pause" aria-label="Pausa"><svg class="ic"><use href="#i-pause"></use></svg></button>
-          <button class="ibtn" id="btn-challenges" aria-label="Retos"><svg class="ic"><use href="#i-trophy"></use></svg></button>
           <button class="ibtn" id="btn-settings" aria-label="Ajustes"><svg class="ic"><use href="#i-settings"></use></svg></button>
           <button class="ibtn" id="btn-sound" aria-label="Sonido"><svg class="ic" id="sound-icon"><use href="#i-sound2"></use></svg></button>
         </nav>
@@ -57,7 +55,6 @@
       <div id="selection-ui" class="selection-ui is-hidden">
         <button class="sel-btn" id="sel-rotate" aria-label="Rotar pieza"><svg class="ic"><use href="#i-rotate"></use></svg></button>
         <button class="sel-btn is-hidden" id="sel-size" aria-label="Cambiar longitud"><svg class="ic"><use href="#i-resize"></use></svg></button>
-        <button class="sel-btn is-hidden color-btn" id="sel-color" aria-label="Cambiar color"><span></span></button>
         <button class="sel-btn" id="sel-duplicate" aria-label="Duplicar pieza"><svg class="ic"><use href="#i-copy"></use></svg></button>
         <button class="sel-btn danger" id="sel-delete" aria-label="Borrar pieza"><svg class="ic"><use href="#i-trash"></use></svg></button>
       </div>
@@ -69,23 +66,7 @@
       <div id="capacity" class="capacity is-hidden"><svg class="ic"><use href="#i-brick"></use></svg><span id="capacity-num">0</span></div>
     </div>
 
-    <div id="tutorial" class="tutorial is-hidden" aria-hidden="true">
-      <div class="hand"><svg viewBox="0 0 64 64"><path d="M26 30V16a4 4 0 0 1 8 0v12" /><path d="M34 28V12a4 4 0 0 1 8 0v16" /><path d="M42 28V17a4 4 0 0 1 8 0v20" /><path d="M26 30V22a4 4 0 0 0-8 0v16c0 11 6 20 20 20 15 0 20-9 20-20V29a4 4 0 0 0-8 0" /></svg></div>
-      <button id="tutorial-skip" class="skip" aria-label="Saltar tutorial"><svg class="ic"><use href="#i-close"></use></svg></button>
-    </div>
-
     <!-- Overlays -->
-    <section id="challenges" class="overlay is-hidden" role="dialog" aria-modal="true" aria-label="Retos">
-      <div class="sheet">
-        <header class="sheet-head">
-          <div class="sheet-title"><svg class="ic"><use href="#i-trophy"></use></svg></div>
-          <div class="sheet-currency"><svg class="ic"><use href="#i-spark"></use></svg><span id="ch-sparks">0</span></div>
-          <button class="ibtn close" data-close="challenges" aria-label="Cerrar"><svg class="ic"><use href="#i-close"></use></svg></button>
-        </header>
-        <div id="challenge-grid" class="challenge-grid"></div>
-      </div>
-    </section>
-
     <section id="settings" class="overlay is-hidden" role="dialog" aria-modal="true" aria-label="Ajustes">
       <div class="sheet narrow">
         <header class="sheet-head">
@@ -93,16 +74,6 @@
           <button class="ibtn close" data-close="settings" aria-label="Cerrar"><svg class="ic"><use href="#i-close"></use></svg></button>
         </header>
         <div id="settings-body" class="settings-body"></div>
-      </div>
-    </section>
-
-    <section id="pause" class="overlay is-hidden" role="dialog" aria-modal="true" aria-label="Pausa">
-      <div class="pause-card">
-        <button class="resume" id="btn-resume" aria-label="Reanudar"><svg class="ic"><use href="#i-play"></use></svg></button>
-        <div class="pause-actions">
-          <button class="ibtn" id="pause-clear" aria-label="Limpiar canicas"><svg class="ic"><use href="#i-broom"></use></svg></button>
-          <button class="ibtn" id="pause-settings" aria-label="Ajustes"><svg class="ic"><use href="#i-settings"></use></svg></button>
-        </div>
       </div>
     </section>
 
@@ -114,8 +85,6 @@
   <svg class="svg-defs" aria-hidden="true">
     <defs>
       <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2.5c.6 4.6 2.4 6.4 7 7-4.6.6-6.4 2.4-7 7-.6-4.6-2.4-6.4-7-7 4.6-.6 6.4-2.4 7-7Z" fill="currentColor" stroke="none"/><path d="M19 15.5c.3 2 1 2.7 3 3-2 .3-2.7 1-3 3-.3-2-1-2.7-3-3 2-.3 2.7-1 3-3Z" fill="currentColor" stroke="none"/></symbol>
-      <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4.5" height="16" rx="2" fill="currentColor" stroke="none"/><rect x="13.5" y="4" width="4.5" height="16" rx="2" fill="currentColor" stroke="none"/></symbol>
-      <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 4.5v15a1 1 0 0 0 1.5.9l12-7.5a1 1 0 0 0 0-1.8l-12-7.5A1 1 0 0 0 8 4.5Z" fill="currentColor" stroke="none"/></symbol>
       <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v4a4 4 0 0 1-8 0V4Z"/><path d="M8 5H4v2a4 4 0 0 0 4 4M16 5h4v2a4 4 0 0 1-4 4"/><path d="M12 12v4M8 20h8M9 20v-2h6v2"/></symbol>
       <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2.4"/><circle cx="8" cy="17" r="2.4"/></symbol>
       <symbol id="i-sound2" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/></symbol>
@@ -138,18 +107,14 @@
       <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M10 20v-6h4v6"/></symbol>
       <symbol id="i-world" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
       <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 4v6h6"/><path d="M4 10a9 9 0 1 1 2 9"/></symbol>
-      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
       <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
       <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
       <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
       <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
-      <symbol id="i-medal" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5"/><path d="m8 13-2 8 6-3 6 3-2-8"/><path d="m10 9 1.5 1.5L14 7.5"/></symbol>
       <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/></symbol>
       <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></symbol>
-      <symbol id="i-loop" viewBox="0 0 24 24"><path d="M20 8V3l-2 2"/><path d="M20 3a9 9 0 1 0 1 9"/><path d="M12 7v5l3 2"/></symbol>
       <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 20V4M6 10l6-6 6 6"/></symbol>
       <symbol id="i-quality" viewBox="0 0 24 24"><path d="M4 19v-5M9 19V9M14 19V5M19 19v-8"/></symbol>
-      <symbol id="i-lefty" viewBox="0 0 24 24"><path d="M8 20V9a2 2 0 0 1 4 0v4M12 18V6a2 2 0 0 1 4 0v12"/><path d="M4 14V8"/></symbol>
       <symbol id="i-motion" viewBox="0 0 24 24"><path d="M3 8c3-4 6 4 9 0s6 4 9 0M3 16c3-4 6 4 9 0s6 4 9 0"/></symbol>
       <symbol id="i-haptics" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="3"/><path d="M4 8v8M20 8v8"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.1"/></symbol>

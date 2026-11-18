@@ -13,7 +13,7 @@ https://fraguio.com/marblelous/
 La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al dominio configurado.
 
 - Toca una pieza de la bandeja y después toca el lienzo para colocarla. La pieza se deselecciona al colocarla: para poner otra, vuelve a tocarla en la bandeja.
-- Toca una pieza ya colocada para seleccionarla. Los botones flotantes permiten rotarla, cambiar color, duplicarla, cambiar su longitud (rampas) o borrarla.
+- Toca una pieza ya colocada para seleccionarla. Los botones flotantes permiten rotarla, duplicarla, cambiar su longitud (rampas) o borrarla. Cada pieza nueva recibe un color aleatorio de la paleta.
 - Cambia a la canica y toca el lienzo para soltar una; mantén pulsado para hacer lluvia.
 - Dos dedos para mover y hacer zoom.
 - Todas las piezas y canicas están disponibles desde el principio. No hay tienda.

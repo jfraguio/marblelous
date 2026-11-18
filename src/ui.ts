@@ -1,22 +1,18 @@
-import type { ChallengeDef, DropSummary } from './types';
+import type { DropSummary } from './types';
 import type { Game } from './game';
-import { CHALLENGES } from './game';
 import {
-  COLORS,
   MARBLE_BY_ID,
-  PIECE_BY_ID,
   SHOP_ITEMS,
   getPieceDef,
   pieceHitSize,
-  noteLabel
 } from './pieces';
 import { drawPreview } from './art';
-import { clamp, fmt, icon, shortAngle } from './util';
+import { clamp, fmt, icon, prefersReducedMotion, shortAngle } from './util';
 
 const $ = <T extends Element = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const $$ = (sel: string) => Array.from(document.querySelectorAll(sel)) as HTMLElement[];
 
-type OverlayId = 'challenges' | 'settings' | 'pause';
+type OverlayId = 'settings';
 
 export class UI {
   game: Game;
@@ -34,28 +30,19 @@ export class UI {
   selection = $('#selection-ui');
   selRotate = $('#sel-rotate');
   selSize = $('#sel-size');
-  selColor = $('#sel-color');
   selDuplicate = $('#sel-duplicate');
   selDelete = $('#sel-delete');
   capacity = $('#capacity');
   capacityNum = $('#capacity-num');
-  tutorial = $('#tutorial');
-  tutorialSkip = $('#tutorial-skip');
-  challenges = $('#challenges');
-  challengeGrid = $('#challenge-grid');
-  chSparks = $('#ch-sparks');
   settings = $('#settings');
   settingsBody = $('#settings-body');
-  pause = $('#pause');
   toastEl = $('#toast');
   summaryEl = $('#summary');
   flashEl = $('#flash');
 
   private toastTimer = 0;
   private summaryTimer = 0;
-  private tutorialTimer = 0;
   private lastCurrency = -1;
-  private lastTutorialPos = 0;
   private rotating: {
     pieceId: number;
     center: { x: number; y: number };
@@ -90,8 +77,6 @@ export class UI {
       this.game.clearMarbles();
       this.toast('broom');
     });
-    $('#btn-pause').addEventListener('click', () => this.openOverlay('pause'));
-    $('#btn-challenges').addEventListener('click', () => this.openOverlay('challenges'));
     $('#btn-settings').addEventListener('click', () => this.openOverlay('settings'));
     this.btnSound.addEventListener('click', () => {
       this.game.cycleSound();
@@ -101,24 +86,9 @@ export class UI {
     $$('.close').forEach((btn) => {
       btn.addEventListener('click', () => this.closeOverlays());
     });
-    this.challenges.addEventListener('pointerdown', (e) => {
-      if (e.target === this.challenges) this.closeOverlays();
-    });
     this.settings.addEventListener('pointerdown', (e) => {
       if (e.target === this.settings) this.closeOverlays();
     });
-    this.pause.addEventListener('pointerdown', (e) => {
-      if (e.target === this.pause) this.closeOverlays();
-    });
-
-    $('#btn-resume').addEventListener('click', () => this.closeOverlays());
-    $('#pause-clear').addEventListener('click', () => {
-      this.game.clearMarbles();
-      this.toast('broom');
-    });
-    $('#pause-settings').addEventListener('click', () => this.openOverlay('settings'));
-
-    this.tutorialSkip.addEventListener('click', () => this.game.skipTutorial());
 
     this.selDelete.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -135,17 +105,6 @@ export class UI {
         this.game.duplicatePiece(p);
         this.updateSelection();
       }
-    });
-    this.selColor.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const p = this.game.selectedPiece;
-      if (!p) return;
-      const def = getPieceDef(p.defId);
-      if (!def.tintable) return;
-      const next = (p.color + 1) % COLORS.length;
-      this.game.setPieceColor(p, next, true, p.color);
-      this.game.audio.ui();
-      this.updateSelection();
     });
     this.selSize.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -203,14 +162,11 @@ export class UI {
     this.refreshMode();
     this.refreshSound();
     this.updateSelection();
-    this.updateTutorial();
-    this.refreshChallenges();
     this.refreshSettings();
   }
 
   refreshHud() {
     this.sparks.textContent = fmt(this.game.currency);
-    this.chSparks.textContent = fmt(this.game.currency);
     this.btnUndo.disabled = !this.game.canUndo;
     this.btnRedo.disabled = !this.game.canRedo;
     this.btnClear.disabled = this.game.marbles.length === 0;
@@ -284,10 +240,6 @@ export class UI {
   }
 
   tick(now: number) {
-    if (now - this.lastTutorialPos > 500) {
-      this.lastTutorialPos = now;
-      this.updateTutorial();
-    }
     this.updateSelection();
     if (this.game.comboChain > 0 && now - this.game.comboAt > 2500) {
       this.combo.classList.add('is-hidden');
@@ -309,13 +261,7 @@ export class UI {
     this.selection.classList.remove('is-hidden');
     const isRamp = p.defId === 'ramp';
     this.selSize.classList.toggle('is-hidden', !isRamp);
-    const def = getPieceDef(p.defId);
-    this.selColor.classList.toggle('is-hidden', !def.tintable);
-    if (def.tintable) {
-      const dot = this.selColor.querySelector('span') as HTMLElement;
-      dot.style.background = COLORS[p.color] ?? COLORS[0];
-    }
-    const count = 3 + (isRamp ? 1 : 0) + (def.tintable ? 1 : 0);
+    const count = 3 + (isRamp ? 1 : 0);
     const width = count * 52 + (count - 1) * 8;
     this.selection.style.left = `${clamp(top.x - width / 2, 8, this.game.viewW - width - 8)}px`;
     this.selection.style.top = `${clamp(top.y - 26, 64, this.game.viewH - 150)}px`;
@@ -369,17 +315,11 @@ export class UI {
   openOverlay(id: OverlayId) {
     this.game.audio.ui();
     $$('.overlay').forEach((el) => el.classList.add('is-hidden'));
-    if (id === 'challenges') {
-      this.challenges.classList.remove('is-hidden');
-      this.refreshChallenges();
-    } else if (id === 'settings') {
+    if (id === 'settings') {
       this.settings.classList.remove('is-hidden');
       this.refreshSettings();
-    } else if (id === 'pause') {
-      this.pause.classList.remove('is-hidden');
     }
     this.game.setOverlayOpen(true);
-    this.updateTutorial();
   }
 
   closeOverlays() {
@@ -387,45 +327,6 @@ export class UI {
     this.game.setOverlayOpen(false);
     this.game.audio.ui();
     this.refreshAll();
-  }
-
-  // ---------------- challenges ----------------
-
-  refreshChallenges() {
-    if (this.challenges.classList.contains('is-hidden')) return;
-    this.chSparks.textContent = fmt(this.game.currency);
-    const scroll = this.challengeGrid.scrollTop;
-    this.challengeGrid.innerHTML = '';
-    for (const c of CHALLENGES) {
-      const value = Math.min(c.target, this.game.challenges[c.id] ?? 0);
-      const done = value >= c.target;
-      const card = document.createElement('div');
-      card.className = `ch-card${done ? ' done' : ''}`;
-      card.setAttribute('aria-label', `${c.label}: ${value} de ${c.target}`);
-      const ring = document.createElement('div');
-      ring.className = 'ch-ring';
-      ring.style.setProperty('--p', `${(value / c.target) * 100}`);
-      const canvas = document.createElement('canvas');
-      ring.appendChild(canvas);
-      card.appendChild(ring);
-      const num = document.createElement('div');
-      num.className = 'ch-num';
-      num.textContent = `${value}/${c.target}`;
-      card.appendChild(num);
-      const reward = document.createElement('div');
-      reward.className = 'ch-reward';
-      reward.innerHTML = `${icon('spark')}${fmt(c.reward)}`;
-      card.appendChild(reward);
-      if (done) {
-        const medal = document.createElement('span');
-        medal.className = 'ch-medal';
-        medal.innerHTML = icon('medal');
-        card.appendChild(medal);
-      }
-      this.challengeGrid.appendChild(card);
-      drawPreview(canvas, c.preview, c.previewType);
-    }
-    this.challengeGrid.scrollTop = scroll;
   }
 
   // ---------------- settings ----------------
@@ -452,8 +353,6 @@ export class UI {
     rows.push(this.buildRow('sound2', 'Sonido', this.dots(s.sound === 2 ? 3 : s.sound, 3), 'sound'));
     const q = s.quality === 'high' ? 3 : s.quality === 'low' ? 1 : 2;
     rows.push(this.buildRow('quality', 'Calidad', this.dots(q, 3, 'warn'), 'quality'));
-    rows.push(this.buildRow('lefty', 'Zurdo', this.dots(s.leftHanded ? 1 : 0, 1), 'lefty'));
-    rows.push(this.buildRow('motion', 'Reducir movimiento', this.dots(s.reduceMotion ? 1 : 0, 1), 'motion'));
     rows.push(this.buildRow('haptics', 'Vibración', this.dots(s.haptics && !ios ? 1 : 0, 1), 'haptics'));
     const worldDots = this.game.worlds
       .map((_, i) => {
@@ -466,9 +365,8 @@ export class UI {
       <div class="set-label">Mundos</div>
       <div class="set-value world-dots">${worldDots}</div>
     </div>`);
-    rows.push(this.buildRow('play', 'Repetir tutorial', '', 'tutorial'));
     rows.push(this.buildRow('trash', 'Borrar canvas', '', 'clear', 'reset-row'));
-    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.2 · sin datos · sin red</span></div>`);
+    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.5.0 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
     this.settingsBody.querySelectorAll<HTMLElement>('.set-row.tap').forEach((row) => {
@@ -476,13 +374,8 @@ export class UI {
       row.addEventListener('click', () => {
         if (action === 'sound') this.game.cycleSound();
         else if (action === 'quality') this.game.cycleQuality();
-        else if (action === 'lefty') this.game.toggleLefty();
-        else if (action === 'motion') this.game.toggleReduceMotion();
         else if (action === 'haptics') this.game.toggleHaptics();
-        else if (action === 'tutorial') {
-          this.game.restartTutorial();
-          this.closeOverlays();
-        } else if (action === 'clear') {
+        else if (action === 'clear') {
           this.game.clearCanvas();
           this.closeOverlays();
         }
@@ -506,45 +399,6 @@ export class UI {
     });
   }
 
-  // ---------------- tutorial ----------------
-
-  updateTutorial() {
-    const show = !this.game.settings.tutorialSeen && this.game.tutorialStep < 4 && !this.game.overlayOpen;
-    this.tutorial.classList.toggle('is-hidden', !show);
-    if (!show) {
-      $$('.tut-target').forEach((el) => el.classList.remove('tut-target'));
-      return;
-    }
-    const hand = this.tutorial.querySelector('.hand') as HTMLElement;
-    let target: HTMLElement | null = null;
-    if (this.game.tutorialStep === 0) {
-      target = (this.tray.querySelector('.card[data-id="brick2"]') as HTMLElement) ?? this.tray;
-    } else if (this.game.tutorialStep === 2) {
-      target = $('#mode-play') as HTMLElement;
-    }
-    if (this.game.tutorialStep === 1 || this.game.tutorialStep === 3) {
-      $$('.tut-target').forEach((el) => el.classList.remove('tut-target'));
-      const world = this.game.tutorialStep === 1
-        ? { x: this.game.camera.x - 150, y: this.game.camera.y - 40 }
-        : { x: this.game.camera.x, y: this.game.camera.y - 160 };
-      const s = this.game.worldToScreen(world.x, world.y);
-      hand.style.left = `${clamp(s.x - 32, 8, window.innerWidth - 72)}px`;
-      hand.style.top = `${clamp(s.y - 40, 60, window.innerHeight - 90)}px`;
-      return;
-    }
-    $$('.tut-target').forEach((el) => {
-      if (el !== target) el.classList.remove('tut-target');
-    });
-    if (!target) return;
-    target.classList.add('tut-target');
-    const r = target.getBoundingClientRect();
-    const isTrayCard = target.classList.contains('card');
-    const left = isTrayCard ? r.right + 4 : r.left + r.width / 2 - 32;
-    const top = isTrayCard ? r.top - 54 : r.top - 58;
-    hand.style.left = `${clamp(left, 8, window.innerWidth - 72)}px`;
-    hand.style.top = `${clamp(top, 60, window.innerHeight - 90)}px`;
-  }
-
   // ---------------- feedback ----------------
 
   toast(iconName: string, text?: string) {
@@ -565,7 +419,6 @@ export class UI {
       <div class="s-item">${icon('spark')}${fmt(s.sparks)}</div>
       <div class="sep"></div>
       <div class="s-item note">${icon('note')}${s.notes}</div>
-      <div class="s-item loop">${icon('loop')}${s.loops}</div>
       <div class="s-item">${icon('trophy')}${s.goals}</div>
     `;
     this.summaryEl.classList.remove('is-hidden');
@@ -578,7 +431,7 @@ export class UI {
   }
 
   flash(alpha = 0.18) {
-    if (this.game.settings.reduceMotion) return;
+    if (prefersReducedMotion()) return;
     this.flashEl.style.opacity = `${alpha}`;
     this.flashEl.classList.add('on');
     window.setTimeout(() => {

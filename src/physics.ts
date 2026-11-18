@@ -1,18 +1,11 @@
 import type { Collider, Marble, PhysEvent, Piece, Trigger } from './types';
-import { LOOP_RADIUS, SPIRAL_DURATION, SPIRAL_ENTRY, buildPiece, getPieceDef, spiralDepth, spiralLocal } from './pieces';
-import { clamp, shortAngle, TAU } from './util';
+import { SPIRAL_DURATION, SPIRAL_ENTRY, buildPiece, getPieceDef, spiralDepth, spiralLocal } from './pieces';
+import { clamp, TAU } from './util';
 
 const CELL = 64;
 const MAX_SPEED = 3400;
 const GRAVITY = 1800;
 const SLOP = 0.5;
-
-interface LoopInfo {
-  pieceId: number;
-  x: number;
-  y: number;
-  r: number;
-}
 
 interface SpiralInfo {
   pieceId: number;
@@ -38,7 +31,6 @@ function closestOnSegment(px: number, py: number, ax: number, ay: number, bx: nu
 export class PhysicsWorld {
   colliders: Collider[] = [];
   triggers: Trigger[] = [];
-  loops: LoopInfo[] = [];
   spirals: SpiralInfo[] = [];
   events: PhysEvent[] = [];
   private grid = new Map<number, number[]>();
@@ -49,15 +41,11 @@ export class PhysicsWorld {
   rebuild(pieces: Piece[]) {
     this.colliders = [];
     this.triggers = [];
-    this.loops = [];
     this.spirals = [];
     for (const p of pieces) {
       const built = buildPiece(p);
       for (const c of built.colliders) this.colliders.push(c);
       for (const t of built.triggers) this.triggers.push(t);
-      if (p.defId === 'loop') {
-        this.loops.push({ pieceId: p.id, x: p.x, y: p.y, r: LOOP_RADIUS });
-      }
       if (p.defId === 'spiral') {
         this.spirals.push({ pieceId: p.id, x: p.x, y: p.y, rot: p.rot });
       }
@@ -108,7 +96,6 @@ export class PhysicsWorld {
       if (m.alive) this.stepMarble(m, dt, now);
     }
     this.resolveMarbles(marbles);
-    this.updateLoops(marbles, dt);
   }
 
   private stepMarble(m: Marble, dt: number, now: number) {
@@ -612,83 +599,6 @@ export class PhysicsWorld {
     }
   }
 
-  private updateLoops(marbles: Marble[], dt: number) {
-    if (this.loops.length === 0) return;
-    for (const m of marbles) {
-      if (!m.alive || !m.awake) continue;
-      for (const loop of this.loops) {
-        const dx = m.x - loop.x;
-        const dy = m.y - loop.y;
-        const d = Math.hypot(dx, dy);
-        const inner = loop.r - 38;
-        const outer = loop.r + 32;
-        let entry = m.loopData.get(loop.pieceId);
-        const speed = Math.hypot(m.vx, m.vy);
-
-        // Asistencia de entrada: una canica que llega por la boca inferior
-        // recibe una pequeña guía tangencial. Hace el bucle fiable y legible.
-        if (
-          (!entry || entry.out > 0.3) &&
-          dy > 0 &&
-          Math.abs(dx) < loop.r * 0.92 &&
-          d > 34 &&
-          d < 108 &&
-          m.vy > -60 &&
-          speed < 1700
-        ) {
-          const a = Math.PI / 3;
-          m.x = loop.x + Math.cos(a) * (loop.r - 14);
-          m.y = loop.y + Math.sin(a) * (loop.r - 14);
-          m.px = m.x;
-          m.py = m.y;
-          const tx = Math.sin(a);
-          const ty = -Math.cos(a);
-          const sp = Math.max(1200, speed * 0.96);
-          m.vx = tx * sp;
-          m.vy = ty * sp;
-          entry = { last: a, total: 0, awarded: false, out: 0 };
-          m.loopData.set(loop.pieceId, entry);
-          continue;
-        }
-
-        if (d < inner || d > outer) {
-          if (entry) {
-            entry.out += dt;
-            if (entry.out > 1.0) {
-              entry.last = 0;
-              entry.total = 0;
-              entry.awarded = false;
-              entry.out = 0;
-            }
-          }
-          continue;
-        }
-        const ang = Math.atan2(dy, dx);
-        if (!entry) {
-          entry = { last: ang, total: 0, awarded: false, out: 0 };
-          m.loopData.set(loop.pieceId, entry);
-        } else {
-          const delta = shortAngle(ang - entry.last);
-          entry.total += delta;
-          entry.last = ang;
-          entry.out = 0;
-        }
-        if (!entry.awarded && Math.abs(entry.total) > 5.2) {
-          entry.awarded = true;
-          this.events.push({
-            type: 'loop',
-            x: m.x,
-            y: m.y,
-            pieceId: loop.pieceId,
-            note: -1,
-            impact: 0,
-            marbleId: m.id,
-            speed: Math.hypot(m.vx, m.vy)
-          });
-        }
-      }
-    }
-  }
 }
 
 export function contentBounds(pieces: Piece[]): { minX: number; minY: number; maxX: number; maxY: number } | null {
@@ -753,7 +663,6 @@ export function createMarble(
     rideNextChime: 0,
     rideScale: 1,
     rideDepth: 0,
-    loopData: new Map()
   };
 }
 
