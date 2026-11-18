@@ -28,7 +28,7 @@ import {
   pieceContains
 } from './pieces';
 import type { UI } from './ui';
-import { clamp, nowMs, prefersReducedMotion, vibrate } from './util';
+import { CAMERA_TILT, clamp, nowMs, prefersReducedMotion, vibrate } from './util';
 
 const SAVE_KEY = 'marblelous.save.v1';
 const BACKUP_KEY = 'marblelous.backup.v1';
@@ -76,7 +76,8 @@ type History =
 export class Game {
   canvas: HTMLCanvasElement;
   audio: AudioEngine;
-  renderer: { render: (alpha: number, now: number) => void; flash?: () => void } | null = null;
+  renderer: { render: (alpha: number, now: number) => void; flash?: () => void; kick?: (amount: number) => void } | null =
+    null;
   ui: UI | null = null;
 
   physics = new PhysicsWorld();
@@ -273,20 +274,20 @@ export class Game {
   screenToWorld(sx: number, sy: number) {
     return {
       x: (sx - this.viewW / 2) / this.camera.zoom + this.camera.x,
-      y: (sy - this.viewH / 2) / this.camera.zoom + this.camera.y
+      y: (sy - this.viewH / 2) / this.camera.zoom / CAMERA_TILT + this.camera.y
     };
   }
 
   worldToScreen(wx: number, wy: number) {
     return {
       x: (wx - this.camera.x) * this.camera.zoom + this.viewW / 2,
-      y: (wy - this.camera.y) * this.camera.zoom + this.viewH / 2
+      y: (wy - this.camera.y) * this.camera.zoom * CAMERA_TILT + this.viewH / 2
     };
   }
 
   panByScreen(dx: number, dy: number) {
     this.camera.x -= dx / this.camera.zoom;
-    this.camera.y -= dy / this.camera.zoom;
+    this.camera.y -= dy / this.camera.zoom / CAMERA_TILT;
   }
 
   zoomAtScreen(sx: number, sy: number, zoom: number) {
@@ -294,9 +295,9 @@ export class Game {
     const old = this.camera.zoom;
     if (Math.abs(nz - old) < 0.0001) return;
     const px = (sx - this.viewW / 2) / old;
-    const py = (sy - this.viewH / 2) / old;
+    const py = (sy - this.viewH / 2) / old / CAMERA_TILT;
     this.camera.x += px - (sx - this.viewW / 2) / nz;
-    this.camera.y += py - (sy - this.viewH / 2) / nz;
+    this.camera.y += py - (sy - this.viewH / 2) / nz / CAMERA_TILT;
     this.camera.zoom = nz;
   }
 
@@ -308,7 +309,7 @@ export class Game {
     }
     const w = Math.max(160, b.maxX - b.minX);
     const h = Math.max(160, b.maxY - b.minY);
-    const zoom = clamp(Math.min((this.viewW - 120) / w, (this.viewH - 190) / h), 0.3, 1.2);
+    const zoom = clamp(Math.min((this.viewW - 120) / w, (this.viewH - 190) / (h * CAMERA_TILT)), 0.3, 1.2);
     this.camera.zoom = zoom;
     this.camera.x = (b.minX + b.maxX) / 2;
     this.camera.y = (b.minY + b.maxY) / 2;
@@ -719,6 +720,7 @@ export class Game {
         if (!this.allow(`tramp:${e.marbleId}:${e.pieceId}`, 340, now)) continue;
         const p = this.pieces.find((x) => x.id === e.pieceId);
         if (p) p.anim = now;
+        this.renderer?.kick?.(0.22);
         this.audio.trampoline(e.impact, pan);
         this.spawnBurst(e.x, e.y, PALETTE.green, 5, 0);
         this.dropStats.tramps++;
@@ -728,11 +730,13 @@ export class Game {
         if (!this.allow(`bump:${e.marbleId}:${e.pieceId}`, 240, now)) continue;
         const p = this.pieces.find((x) => x.id === e.pieceId);
         if (p) p.flash = now;
+        this.renderer?.kick?.(0.34);
         this.audio.bumper(pan);
         this.spawnBurst(e.x, e.y, PALETTE.teal, 6, 1);
         this.score(10, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'cannon') {
         this.audio.cannon(pan);
+        this.renderer?.kick?.(0.24);
         this.spawnBurst(e.x, e.y, PALETTE.purple, 5, 0);
         this.score(2, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'boost') {
@@ -751,6 +755,7 @@ export class Game {
       } else if (e.type === 'loop') {
         if (!this.allow(`loop:${e.marbleId}:${e.pieceId}`, 2600, now)) continue;
         this.audio.loop(pan);
+        this.renderer?.kick?.(0.6);
         this.spawnBurst(e.x, e.y, PALETTE.red, 18, 1);
         this.dropStats.loops++;
         this.records.loops++;
@@ -760,6 +765,7 @@ export class Game {
       } else if (e.type === 'goal') {
         const m = this.marbles.find((x) => x.id === e.marbleId);
         this.audio.goal(pan);
+        this.renderer?.kick?.(1);
         const p = this.pieces.find((x) => x.id === e.pieceId);
         if (p) p.anim = now;
         this.spawnConfetti(e.x, e.y - 20);
@@ -773,6 +779,7 @@ export class Game {
         if (this.settings.haptics) vibrate(18);
       } else if (e.type === 'star') {
         this.audio.star(pan);
+        this.renderer?.kick?.(0.3);
         this.spawnBurst(e.x, e.y, PALETTE.yellow, 12, 1);
         const p = this.pieces.find((x) => x.id === e.pieceId);
         if (p) p.disabledUntil = now + 5000;

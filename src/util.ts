@@ -2,6 +2,13 @@ import type { Vec2 } from './types';
 
 export const TAU = Math.PI * 2;
 
+/**
+ * Cámara 3/4: el plano del mundo se comprime ligeramente en vertical. Es solo
+ * una transformación visual; `Game.screenToWorld` la invierte para que tocar
+ * siga siendo exacto.
+ */
+export const CAMERA_TILT = 0.93;
+
 export const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 export const dist = (ax: number, ay: number, bx: number, by: number) => Math.hypot(bx - ax, by - ay);

@@ -32,6 +32,7 @@ export interface Sprite {
 
 const cache = new Map<string, Sprite>();
 const marbleCache = new Map<string, Sprite>();
+const shadowCache = new Map<string, Sprite>();
 let cacheBudget = 140;
 
 function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -53,6 +54,40 @@ const EXTRUDE_X = 5;
 const EXTRUDE_Y = 6;
 const EXTRUDE_STEPS = 8;
 
+/**
+ * Dirección de la luz de estudio (desde la escena hacia la fuente): arriba a la
+ * izquierda. Todos los volúmenes y sombras de la escena la comparten.
+ */
+export const LIGHT_X = -0.56;
+export const LIGHT_Y = -0.83;
+
+/** Silueta plana del arte, tintada. */
+function silhouette(src: HTMLCanvasElement, color: string): HTMLCanvasElement {
+  const out = makeCanvas(src.width, src.height);
+  const ctx = out.getContext('2d')!;
+  ctx.drawImage(src, 0, 0);
+  ctx.globalCompositeOperation = 'source-in';
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, out.width, out.height);
+  return out;
+}
+
+/**
+ * Desenfoque barato y compatible con Safari antiguo: reducir y volver a
+ * ampliar con suavizado. Se usa solo al hornear sprites, nunca por frame.
+ */
+function blurCanvas(src: HTMLCanvasElement, factor: number): HTMLCanvasElement {
+  const small = makeCanvas(Math.max(1, src.width / factor), Math.max(1, src.height / factor));
+  const sctx = small.getContext('2d')!;
+  sctx.imageSmoothingEnabled = true;
+  sctx.drawImage(src, 0, 0, small.width, small.height);
+  const out = makeCanvas(src.width, src.height);
+  const octx = out.getContext('2d')!;
+  octx.imageSmoothingEnabled = true;
+  octx.drawImage(small, 0, 0, out.width, out.height);
+  return out;
+}
+
 function makeSprite(
   worldW: number,
   worldH: number,
@@ -71,23 +106,41 @@ function makeSprite(
 
   const canvas = makeCanvas(art.width, art.height);
   const ctx = canvas.getContext('2d')!;
-  const sil = makeCanvas(art.width, art.height);
-  const sctx = sil.getContext('2d')!;
-  sctx.drawImage(art, 0, 0);
-  sctx.globalCompositeOperation = 'source-in';
-  sctx.fillStyle = sideColor;
-  sctx.fillRect(0, 0, sil.width, sil.height);
+  const sil = silhouette(art, sideColor);
+
+  // Oclusión ambiental horneada: halo suave bajo el cuerpo, desplazado hacia
+  // donde cae la sombra. Da asiento a la pieza sin coste por frame.
+  const ao = blurCanvas(silhouette(art, 'rgba(35,33,28,0.55)'), 4);
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  ctx.drawImage(ao, 1.5 * SPRITE_SCALE, 2.8 * SPRITE_SCALE);
+  ctx.restore();
+
   for (let i = EXTRUDE_STEPS; i >= 1; i--) {
     const t = i / EXTRUDE_STEPS;
     ctx.drawImage(sil, EXTRUDE_X * t * SPRITE_SCALE, EXTRUDE_Y * t * SPRITE_SCALE);
   }
   ctx.drawImage(art, 0, 0);
+
+  // Luz direccional horneada: canto superior iluminado, base en penumbra.
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-atop';
+  const light = ctx.createLinearGradient(0, 0, canvas.width * 0.62, canvas.height);
+  light.addColorStop(0, 'rgba(255,255,255,0.20)');
+  light.addColorStop(0.38, 'rgba(255,255,255,0.03)');
+  light.addColorStop(0.72, 'rgba(35,33,28,0.035)');
+  light.addColorStop(1, 'rgba(35,33,28,0.15)');
+  ctx.fillStyle = light;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+
   return { canvas, w, h };
 }
 
 export function clearSpriteCache() {
   cache.clear();
   marbleCache.clear();
+  shadowCache.clear();
 }
 
 export function setSpriteBudget(n: number) {
@@ -99,6 +152,11 @@ function trimCache() {
     const key = cache.keys().next().value as string | undefined;
     if (key === undefined) break;
     cache.delete(key);
+  }
+  while (shadowCache.size > cacheBudget) {
+    const key = shadowCache.keys().next().value as string | undefined;
+    if (key === undefined) break;
+    shadowCache.delete(key);
   }
 }
 
@@ -186,6 +244,55 @@ export function getPieceSprite(p: Piece): Sprite {
 export function drawPiece(ctx: CanvasRenderingContext2D, p: Piece) {
   const s = getPieceSprite(p);
   ctx.drawImage(s.canvas, -s.w / 2, -s.h / 2, s.w, s.h);
+}
+
+/**
+ * Sombra de contacto de una pieza: su silueta desenfocada. Se hornea una vez
+ * por variante y se dibuja antes de las piezas.
+ */
+export function getPieceShadow(p: Piece): Sprite {
+  const key = `${p.defId}|${p.color}|${p.len}|${p.variant}`;
+  const hit = shadowCache.get(key);
+  if (hit) return hit;
+  const s = getPieceSprite(p);
+  const soft = blurCanvas(silhouette(s.canvas, '#23211C'), 6);
+  const shadow = { canvas: soft, w: s.w, h: s.h };
+  shadowCache.set(key, shadow);
+  trimCache();
+  return shadow;
+}
+
+let blob: Sprite | null = null;
+
+/** Mancha de sombra difusa reutilizable (canicas, piezas de efecto). */
+export function getSoftShadow(): Sprite {
+  if (blob) return blob;
+  const size = 64;
+  const c = makeCanvas(size, size);
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, 'rgba(35,33,28,0.62)');
+  g.addColorStop(0.5, 'rgba(35,33,28,0.3)');
+  g.addColorStop(1, 'rgba(35,33,28,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  blob = { canvas: c, w: size, h: size };
+  return blob;
+}
+
+export function drawSoftShadow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rx: number,
+  ry: number,
+  alpha: number
+) {
+  if (rx <= 0 || ry <= 0 || alpha <= 0) return;
+  const s = getSoftShadow();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(s.canvas, x - rx, y - ry, rx * 2, ry * 2);
+  ctx.globalAlpha = 1;
 }
 
 function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
@@ -840,50 +947,128 @@ function star(
 export function getMarbleSprite(type: MarbleType): Sprite {
   const hit = marbleCache.get(type.id);
   if (hit) return hit;
+  const metal = type.id === 'steel';
+  const rubber = type.id === 'rubber';
   const s = makeSprite(34, 34, (ctx) => {
     const r = 17;
-    ctx.fillStyle = PALETTE.shadow;
-    ctx.beginPath();
-    ctx.arc(1, 3, r, 0, TAU);
-    ctx.fill();
-    const g = ctx.createRadialGradient(-5, -6, 2, 0, 0, r);
-    g.addColorStop(0, shade(type.color, 0.72));
-    g.addColorStop(0.35, shade(type.color, 0.28));
-    g.addColorStop(0.82, type.color);
-    g.addColorStop(1, shade(type.color, -0.32));
+
+    // Esfera base: la luz viene de arriba a la izquierda.
+    const g = ctx.createRadialGradient(-6, -7, 1, 0, 1.5, r);
+    if (metal) {
+      g.addColorStop(0, '#F7FAFC');
+      g.addColorStop(0.24, shade(type.color, 0.5));
+      g.addColorStop(0.48, type.color);
+      g.addColorStop(0.66, shade(type.color, -0.34));
+      g.addColorStop(0.82, shade(type.color, 0.16));
+      g.addColorStop(1, shade(type.color, -0.52));
+    } else if (rubber) {
+      g.addColorStop(0, shade(type.color, 0.44));
+      g.addColorStop(0.42, shade(type.color, 0.14));
+      g.addColorStop(0.8, type.color);
+      g.addColorStop(1, shade(type.color, -0.44));
+    } else {
+      g.addColorStop(0, shade(type.color, 0.82));
+      g.addColorStop(0.3, shade(type.color, 0.36));
+      g.addColorStop(0.7, type.color);
+      g.addColorStop(1, shade(type.color, -0.4));
+    }
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, TAU);
     ctx.fill();
-    ctx.strokeStyle = rgba(PALETTE.ink, 0.22);
-    ctx.lineWidth = 1.4;
+
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(0, 0, r - 0.8, 0, TAU);
+    ctx.arc(0, 0, r - 0.4, 0, TAU);
+    ctx.clip();
+
+    if (metal) {
+      // Reflejo de estudio: banda de horizonte y destello alargado.
+      const band = ctx.createLinearGradient(0, -r, 0, r);
+      band.addColorStop(0.3, 'rgba(255,255,255,0)');
+      band.addColorStop(0.44, 'rgba(255,255,255,0.34)');
+      band.addColorStop(0.53, 'rgba(255,255,255,0.05)');
+      band.addColorStop(0.66, 'rgba(35,33,28,0.12)');
+      band.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = band;
+      ctx.fillRect(-r, -r, r * 2, r * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.72)';
+      ctx.beginPath();
+      ctx.ellipse(-5.5, -7.5, 5.4, 3.1, -0.6, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.arc(0, 0, 12.6, 0.1, Math.PI * 0.9);
+      ctx.stroke();
+    } else if (rubber) {
+      // Goma: mate, con grano fino y brillo ancho y suave.
+      ctx.fillStyle = 'rgba(255,255,255,0.34)';
+      ctx.beginPath();
+      ctx.ellipse(-5.8, -7.2, 5.2, 3.4, -0.5, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(35,33,28,0.1)';
+      for (let i = 0; i < 9; i++) {
+        const a = i * 2.4;
+        const rr = 4 + (i % 4) * 2.6;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * rr, Math.sin(a) * rr * 1.1, 0.75, 0, TAU);
+        ctx.fill();
+      }
+    } else {
+      // Cristal: burbuja interior, arco especular y cáustica inferior.
+      ctx.fillStyle = 'rgba(255,255,255,0.16)';
+      ctx.beginPath();
+      ctx.arc(-1.5, 1.5, r * 0.62, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(0.6, 1.2, 9.6, -2.65, -1.02);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.42)';
+      ctx.beginPath();
+      ctx.ellipse(5.2, 7.4, 3.6, 1.7, -0.4, 0, TAU);
+      ctx.fill();
+    }
+
+    // Luz de rebote en el borde opuesto a la fuente.
+    ctx.strokeStyle = `rgba(255,255,255,${rubber ? 0.16 : 0.32})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, r - 1.4, 0.42, 2.1);
     ctx.stroke();
-    ctx.fillStyle = rgba('#ffffff', 0.82);
+
+    if (type.premium) {
+      // Iridiscencia: dos arcos de color complementario.
+      ctx.strokeStyle = rgba(type.glow ?? type.color, 0.55);
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(0, 0, r - 2.4, -1.2, 1.1);
+      ctx.stroke();
+      ctx.strokeStyle = rgba(shade(type.glow ?? type.color, -0.2), 0.3);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(0, 0, r - 4.1, 0.3, 2.5);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Contorno y especular principal.
+    ctx.strokeStyle = rgba(PALETTE.ink, 0.24);
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.arc(0, 0, r - 0.7, 0, TAU);
+    ctx.stroke();
+    ctx.fillStyle = rgba('#ffffff', rubber ? 0.62 : 0.86);
     ctx.beginPath();
     ctx.ellipse(-5.5, -7, 4.6, 3.2, -0.55, 0, TAU);
     ctx.fill();
-    ctx.fillStyle = rgba('#ffffff', 0.45);
+    ctx.fillStyle = rgba('#ffffff', 0.42);
     ctx.beginPath();
     ctx.arc(5, 6, 2.2, 0, TAU);
     ctx.fill();
-    if (type.id === 'steel') {
-      ctx.strokeStyle = rgba('#ffffff', 0.25);
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.arc(0, 0, 11, 0.2, Math.PI * 0.95);
-      ctx.stroke();
-    }
-    if (type.premium) {
-      ctx.strokeStyle = type.glow ?? type.color;
-      ctx.globalAlpha = 0.55;
-      ctx.lineWidth = 2.4;
-      ctx.beginPath();
-      ctx.arc(0, 0, r - 3, 0, TAU);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
   }, false);
   marbleCache.set(type.id, s);
   return s;

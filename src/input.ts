@@ -1,6 +1,6 @@
 import type { Game } from './game';
 import type { UI } from './ui';
-import { clamp, isEditableTarget } from './util';
+import { CAMERA_TILT, clamp, isEditableTarget } from './util';
 
 type Screen = { x: number; y: number };
 
@@ -337,7 +337,7 @@ export class Input {
     const zoom = clamp(this.pinch.startZoom * (d / this.pinch.startDist), 0.3, 2.5);
     this.game.camera.zoom = zoom;
     this.game.camera.x = this.pinch.worldAtMid.x - (mid.x - this.game.viewW / 2) / zoom;
-    this.game.camera.y = this.pinch.worldAtMid.y - (mid.y - this.game.viewH / 2) / zoom;
+    this.game.camera.y = this.pinch.worldAtMid.y - (mid.y - this.game.viewH / 2) / zoom / CAMERA_TILT;
     this.game.saveCamera();
   }
 

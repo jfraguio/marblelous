@@ -3,8 +3,10 @@ import type { Marble, Piece } from './types';
 import {
   drawMarbleSprite,
   drawPiece,
-  getPieceSprite,
-  PAD,
+  drawSoftShadow,
+  getPieceShadow,
+  LIGHT_X,
+  LIGHT_Y,
   setSpriteBudget
 } from './art';
 import {
@@ -16,12 +18,36 @@ import {
   spiralLocal,
   xyloLayout
 } from './pieces';
-import { clamp, lerp, rgba, TAU } from './util';
+import { PostFX } from './postfx';
+import { clamp, lerp, rgba, TAU, CAMERA_TILT } from './util';
+
+interface Dust {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+}
+
+const SHADOW_OFF_X = -LIGHT_X * 13;
+const SHADOW_OFF_Y = -LIGHT_Y * 13;
+const ELLIPSE_SHADOW = new Set([
+  'spiral',
+  'magnet',
+  'portal',
+  'fan',
+  'booster',
+  'bubble',
+  'star'
+]);
 
 export class Renderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private game: Game;
+  private post = new PostFX();
   private width = 1;
   private height = 1;
   private dpr = 1;
@@ -30,6 +56,12 @@ export class Renderer {
   private avgFrame = 16.7;
   private lastFrame = 0;
   private lastCheck = 0;
+  private lastRender = 0;
+  private shake = 0;
+  private comboPulse = 0;
+  private lastCombo = 0;
+  private dust: Dust[] = [];
+  private prevAir = new Map<number, number>();
 
   constructor(canvas: HTMLCanvasElement, game: Game) {
     this.canvas = canvas;
@@ -42,6 +74,13 @@ export class Renderer {
     window.addEventListener('orientationchange', () => window.setTimeout(() => this.resize(), 120));
     this.lastFrame = performance.now();
     this.lastCheck = this.lastFrame;
+    this.lastRender = this.lastFrame;
+  }
+
+  /** Sacudida de cámara (solo visual). `amount` va de 0 a ~1.5. */
+  kick(amount: number) {
+    if (this.game.settings.reduceMotion) return;
+    this.shake = Math.min(13, this.shake + amount * 8);
   }
 
   setLevel(level: number) {
@@ -83,23 +122,55 @@ export class Renderer {
     const w = this.width;
     const h = this.height;
     const dpr = this.dpr;
-    const zoom = cam.zoom;
+    const reduced = g.settings.reduceMotion;
+    const dt = Math.min(0.05, Math.max(0, (now - this.lastRender) / 1000));
+    this.lastRender = now;
+
+    // Pulso de combo y sacudida, solo render.
+    if (!reduced && g.comboChain > this.lastCombo && g.comboChain > 1) this.comboPulse = 1;
+    this.lastCombo = g.comboChain;
+    this.comboPulse *= Math.exp(-dt * 4.5);
+    this.shake *= Math.exp(-dt * 8.5);
+    if (reduced) this.shake = 0;
+    const shakeX = this.shake > 0.05 ? (Math.random() * 2 - 1) * this.shake : 0;
+    const shakeY = this.shake > 0.05 ? (Math.random() * 2 - 1) * this.shake : 0;
+    const zoom = cam.zoom * (1 + (reduced ? 0 : this.comboPulse * 0.014));
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = PALETTE.paper;
     ctx.fillRect(0, 0, w, h);
+    this.drawBackdrop(ctx, w, h, cam, now);
 
     // visible world rect
     const minX = cam.x - w / 2 / zoom - 80;
     const maxX = cam.x + w / 2 / zoom + 80;
-    const minY = cam.y - h / 2 / zoom - 80;
-    const maxY = cam.y + h / 2 / zoom + 80;
+    const minY = cam.y - h / 2 / (zoom * CAMERA_TILT) - 80;
+    const maxY = cam.y + h / 2 / (zoom * CAMERA_TILT) + 80;
 
-    ctx.setTransform(zoom * dpr, 0, 0, zoom * dpr, (w / 2 - cam.x * zoom) * dpr, (h / 2 - cam.y * zoom) * dpr);
+    ctx.setTransform(
+      zoom * dpr,
+      0,
+      0,
+      zoom * CAMERA_TILT * dpr,
+      (w / 2 - cam.x * zoom + shakeX) * dpr,
+      (h / 2 - cam.y * zoom * CAMERA_TILT + shakeY) * dpr
+    );
     this.drawGrid(minX, maxX, minY, maxY, zoom);
 
+    // Orden por profundidad: lo que está más abajo se dibuja encima.
+    const visible: Piece[] = [];
     for (const p of g.pieces) {
       if (p.x < minX - 420 || p.x > maxX + 420 || p.y < minY - 420 || p.y > maxY + 420) continue;
+      visible.push(p);
+    }
+    visible.sort((a, b) => a.y - b.y);
+
+    // Sombra de contacto de todas las piezas (debajo de todas).
+    if (this.level < 2) {
+      for (const p of visible) this.drawPieceShadow(ctx, p);
+    }
+
+    for (const p of visible) {
       this.drawWorldPiece(ctx, p, now, zoom);
     }
 
@@ -116,6 +187,7 @@ export class Renderer {
         color: def.defaultColor,
         variant: 0
       };
+      if (this.level < 2) this.drawPieceShadow(ctx, temp);
       ctx.save();
       ctx.globalAlpha = 0.48;
       ctx.translate(temp.x, temp.y);
@@ -137,8 +209,12 @@ export class Renderer {
     for (const m of g.marbles) {
       if (!m.alive) continue;
       if (m.x < minX || m.x > maxX || m.y < minY || m.y > maxY) continue;
-      this.drawMarble(ctx, m, alpha, now);
+      this.landingDust(m, reduced);
+      this.drawMarble(ctx, m, alpha, now, reduced);
     }
+    if (this.prevAir.size > 400) this.prevAir.clear();
+    this.updateDust(dt);
+    this.drawDust(ctx);
 
     this.drawParticles(ctx, now);
     this.drawPopups(ctx);
@@ -155,9 +231,122 @@ export class Renderer {
     if (g.ghost && g.ghost.kind === 'marble') {
       const type = MARBLE_BY_ID.get(g.ghost.typeId);
       if (type) {
+        if (this.level < 2) drawSoftShadow(ctx, g.ghost.x + 4, g.ghost.y + 9, type.r * 1.9, type.r * 0.95, 0.35);
         drawMarbleSprite(ctx, type, g.ghost.x, g.ghost.y, type.r * 1.15, 0.6);
       }
     }
+
+    // Destello cálido de combo y pase de post-proceso.
+    if (!reduced && this.comboPulse > 0.015) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const grad = ctx.createRadialGradient(w / 2, h * 0.45, 0, w / 2, h * 0.45, Math.max(w, h) * 0.62);
+      grad.addColorStop(0, `rgba(233,180,76,${this.comboPulse * 0.13})`);
+      grad.addColorStop(1, 'rgba(233,180,76,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    this.post.apply(ctx, this.canvas, w, h, dpr, this.level, now);
+  }
+
+  /** Fondo de estudio: charco de luz y penumbra con parallax leve. */
+  private drawBackdrop(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    cam: { x: number; y: number },
+    now: number
+  ) {
+    const px = clamp(-cam.x * 0.018, -90, 90);
+    const py = clamp(-cam.y * 0.018, -70, 70);
+    const pulse = 0.5 + 0.5 * Math.sin(now * 0.00022);
+
+    const g1 = ctx.createRadialGradient(w * 0.26 + px, h * 0.1 + py, 0, w * 0.26 + px, h * 0.1 + py, Math.max(w, h) * 0.95);
+    g1.addColorStop(0, `rgba(255,252,242,${0.26 + pulse * 0.04})`);
+    g1.addColorStop(0.55, 'rgba(255,252,242,0.1)');
+    g1.addColorStop(1, 'rgba(255,252,242,0)');
+    ctx.fillStyle = g1;
+    ctx.fillRect(0, 0, w, h);
+
+    const g2 = ctx.createRadialGradient(
+      w * 0.82 - px * 0.6,
+      h * 0.92 - py * 0.6,
+      0,
+      w * 0.82 - px * 0.6,
+      h * 0.92 - py * 0.6,
+      Math.max(w, h) * 0.85
+    );
+    g2.addColorStop(0, 'rgba(35,33,28,0.05)');
+    g2.addColorStop(1, 'rgba(35,33,28,0)');
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  private drawPieceShadow(ctx: CanvasRenderingContext2D, p: Piece) {
+    if (ELLIPSE_SHADOW.has(p.defId)) {
+      const hs = pieceHitSize(p);
+      const wide = p.defId === 'magnet' ? 120 : hs.w * 0.62;
+      const tall = p.defId === 'fan' ? 150 : Math.max(16, hs.h * 0.5);
+      drawSoftShadow(ctx, p.x + SHADOW_OFF_X * 0.8, p.y + SHADOW_OFF_Y * 0.9, wide, tall, 0.26);
+      return;
+    }
+    const sh = getPieceShadow(p);
+    ctx.save();
+    ctx.translate(p.x + SHADOW_OFF_X, p.y + SHADOW_OFF_Y);
+    if (p.rot) ctx.rotate(p.rot);
+    ctx.globalAlpha = 0.46;
+    ctx.drawImage(sh.canvas, -sh.w / 2, -sh.h / 2, sh.w, sh.h);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  /** Polvo y mini onda al aterrizar una canica. */
+  private landingDust(m: Marble, reduced: boolean) {
+    const prev = this.prevAir.get(m.id) ?? 0;
+    this.prevAir.set(m.id, m.airTime);
+    if (reduced || prev < 0.32 || m.airTime > 0.001) return;
+    const n = prev > 0.8 ? 7 : 4;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * TAU;
+      const speed = 24 + Math.random() * 46;
+      this.dust.push({
+        x: m.x + Math.cos(a) * m.r * 0.7,
+        y: m.y + m.r * 0.6 + Math.sin(a) * m.r * 0.3,
+        vx: Math.cos(a) * speed,
+        vy: Math.sin(a) * speed * 0.45 - 12,
+        life: 0.36 + Math.random() * 0.24,
+        maxLife: 0.6,
+        size: 1.8 + Math.random() * 2.8
+      });
+    }
+    this.kick(Math.min(0.5, prev * 0.55));
+  }
+
+  private updateDust(dt: number) {
+    for (let i = this.dust.length - 1; i >= 0; i--) {
+      const d = this.dust[i];
+      d.life -= dt;
+      if (d.life <= 0) {
+        this.dust.splice(i, 1);
+        continue;
+      }
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.vx *= 1 - dt * 3.4;
+      d.vy = d.vy * (1 - dt * 2.2) + 26 * dt;
+    }
+  }
+
+  private drawDust(ctx: CanvasRenderingContext2D) {
+    for (const d of this.dust) {
+      const t = clamp(d.life / d.maxLife, 0, 1);
+      ctx.globalAlpha = t * 0.62;
+      ctx.fillStyle = PALETTE.paper3;
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.size * (1.4 - t * 0.5), 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
 
   private drawGrid(minX: number, maxX: number, minY: number, maxY: number, zoom: number) {
@@ -203,6 +392,13 @@ export class Renderer {
       const age = (now - p.anim) / 1000;
       if (age >= 0 && age < 0.7) {
         ctx.rotate(Math.sin(age * 28) * 0.075 * Math.exp(-age * 3.2));
+      }
+    }
+    if (def.id === 'bumper' && p.flash) {
+      const age = (now - p.flash) / 1000;
+      if (age >= 0 && age < 0.24) {
+        const k = Math.exp(-age * 17);
+        ctx.scale(1 + 0.09 * k, 1 - 0.12 * k);
       }
     }
 
@@ -327,11 +523,48 @@ export class Renderer {
     ctx.restore();
   }
 
-  private drawMarble(ctx: CanvasRenderingContext2D, m: Marble, alpha: number, now: number) {
+  private drawMarble(
+    ctx: CanvasRenderingContext2D,
+    m: Marble,
+    alpha: number,
+    now: number,
+    reduced: boolean
+  ) {
     const type = MARBLE_BY_ID.get(m.typeId);
     if (!type) return;
     const x = m.awake ? lerp(m.px, m.x, alpha) : m.x;
     const y = m.awake ? lerp(m.py, m.y, alpha) : m.y;
+    const air = clamp(m.airTime ?? 0, 0, 1.6);
+    const lift = Math.min(1, air / 1.15);
+
+    // Sombra proyectada: se separa y se aclara cuando la canica va por el aire.
+    if (this.level < 2) {
+      drawSoftShadow(
+        ctx,
+        x + 3.5 + lift * 7,
+        y + 6 + lift * 10,
+        m.r * 1.75 + lift * 2.6,
+        m.r * 0.92 + lift * 1.5,
+        0.48 * (1 - lift * 0.5)
+      );
+    }
+
+    const speed = Math.hypot(m.vx, m.vy);
+    if (!reduced && speed > 760) {
+      // Motion blur barato: estelas de la propia esfera.
+      const t = clamp((speed - 760) / 1400, 0, 1);
+      for (let i = 3; i >= 1; i--) {
+        const back = 0.011 * i;
+        drawMarbleSprite(
+          ctx,
+          type,
+          x - m.vx * back,
+          y - m.vy * back,
+          m.r * (1 + lift * 0.1),
+          (0.16 - i * 0.035) * t
+        );
+      }
+    }
 
     if (type.premium && m.trail.length >= 4) {
       ctx.lineCap = 'round';
@@ -352,14 +585,16 @@ export class Renderer {
       const glow = 0.12 + 0.05 * Math.sin(now * 0.004 + m.id);
       ctx.fillStyle = rgba(type.glow ?? type.color, glow);
       ctx.beginPath();
-      ctx.arc(x, y, m.r * 2.4, 0, TAU);
+      ctx.arc(x, y, m.r * (2.4 + lift * 0.4), 0, TAU);
       ctx.fill();
     }
 
     const age = now - m.bornAt;
     const grow = age >= 0 && age < 90 ? 0.35 + 0.65 * (age / 90) : 1;
     const rideScale = m.ridePiece ? m.rideScale : 1;
-    drawMarbleSprite(ctx, type, x, y, m.r * grow * rideScale);
+    // Al ir por el aire se agranda un poco: lee como altura, no como escala.
+    const airScale = 1 + lift * (0.1 + Math.min(0.08, air * 0.1));
+    drawMarbleSprite(ctx, type, x, y, m.r * grow * rideScale * airScale);
   }
 
   private drawSelection(ctx: CanvasRenderingContext2D, p: Piece, zoom: number) {

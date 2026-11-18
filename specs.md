@@ -1326,13 +1326,15 @@ for i in steps:
 ```
 1. Ajustar tamaño del canvas si cambió (DPR limitado).
 2. Limpiar con --paper (alpha: false en el contexto principal).
-3. Contexto de cámara: setTransform(zoom, 0, 0, zoom, tx, ty).
-4. Fondo: rejilla (si zoom ≥ 0.6) mediante pattern.
-5. Piezas visibles: frustum culling por chunks; drawImage del sprite con rotación.
-6. Canicas: drawImage interpolado; estela si procede.
-7. Partículas y popups: drawImage con alpha.
-8. Fantasma de pieza/canica y selección (si aplica).
-9. HUD DOM: actualización solo si cambian valores.
+3. Fondo de estudio con parallax leve y rejilla (si zoom ≥ 0,6).
+4. Contexto de cámara: `setTransform` con zoom, `TILT` y sacudida.
+5. Sombras de contacto de las piezas visibles (una pasada bajo todas).
+6. Piezas visibles ordenadas por `y`; `drawImage` del sprite con rotación.
+7. Canicas: sombra dinámica, motion blur y sprite interpolado.
+8. Partículas, polvo de aterrizaje, popups y destello de combo.
+9. Fantasma de pieza/canica y selección (si aplica).
+10. Post-proceso: bloom, tilt-shift, aberración cromática, grano y viñeta.
+11. HUD DOM: actualización solo si cambian valores.
 ```
 
 - El contexto principal se crea con `{ alpha: false }`, lo que mejora el compositing.
@@ -1421,7 +1423,7 @@ Un monitor de frame time con media móvil decide la calidad:
 - `backdrop-filter` (caro en iPad antiguo).
 - `shadowBlur` en canvas.
 - Filtros CSS sobre el canvas.
-- Gradientes creados por frame.
+- Gradientes creados por frame (la única excepción es el charco de luz del fondo: 2 gradientes con parallax).
 - `fillText` por frame.
 - `setInterval` para animación.
 - DOM por partícula.
@@ -1435,19 +1437,19 @@ Un monitor de frame time con media móvil decide la calidad:
 La cámara no rota: solo traslada y escala. Esto mantiene la física alineada con la pantalla y simplifica todos los gestos.
 
 ```
-// mundo → pantalla (CSS px)
+// mundo → pantalla (CSS px), con cámara 3/4
 sx = (wx - cam.x) * zoom + viewport.w / 2
-sy = (wy - cam.y) * zoom + viewport.h / 2
+sy = (wy - cam.y) * zoom * TILT + viewport.h / 2
 
 // pantalla → mundo
 wx = (sx - viewport.w / 2) / zoom + cam.x
-wy = (sy - viewport.h / 2) / zoom + cam.y
+wy = (sy - viewport.h / 2) / (zoom * TILT) + cam.y
 
 // zoom manteniendo fijo el punto de pantalla P
 cam.x += (P.x - viewport.w / 2) / zoomViejo
        - (P.x - viewport.w / 2) / zoomNuevo
-cam.y += (P.y - viewport.h / 2) / zoomViejo
-       - (P.y - viewport.h / 2) / zoomNuevo
+cam.y += (P.y - viewport.h / 2) / (zoomViejo * TILT)
+       - (P.y - viewport.h / 2) / (zoomNuevo * TILT)
 zoom = zoomNuevo
 ```
 
@@ -1457,6 +1459,33 @@ zoom = zoomNuevo
 - **Recentrar:** calcula el bbox de todas las piezas, añade un margen de 80 px y ajusta el zoom para que quepa, con un máximo de 1,2 y un mínimo de 0,3. Si no hay piezas, vuelve a (0,0) a zoom 1.
 - El canvas se dimensiona como `cssW * dpr × cssH * dpr` y la matriz de cámara se multiplica por `dpr`; así el dibujo es nítido sin cambiar las coordenadas de juego.
 - No hay inercia de paneo: en un juguete de construcción, la respuesta 1:1 se siente más precisa y evita marear.
+- La cámara aplica una compresión vertical fija `TILT = 0,93` para leer el plano como una mesa en 3/4. `screenToWorld`, `worldToScreen`, el paneo y el zoom la invierten, así que tocar sigue siendo exacto.
+
+### 11.12 Iluminación, materiales y post-proceso (v1.3)
+
+Una sola dirección de luz de estudio gobierna toda la escena (`LIGHT_X = -0,56`, `LIGHT_Y = -0,83`, arriba a la izquierda).
+
+**Horneado en sprites (coste cero por frame):**
+- Oclusión ambiental: la silueta de cada pieza se desenfoca con un reducido/ampliado y se dibuja bajo el cuerpo, desplazada hacia la sombra.
+- Luz direccional: gradiente lineal superior claro → base en penumbra, aplicado con `source-atop`.
+- Materiales de canica: cristal (burbuja interior, arco especular, cáustica), goma (mate con grano), acero (banda de horizonte y destello) y plasma/cometa (iridiscencia de dos arcos).
+
+**Por frame:**
+- Sombras de contacto: silueta desenfocada y cacheada por variante de pieza, dibujada antes de las piezas con `alpha ≈ 0,46`. Las piezas de efecto (imán, portal, ventilador…) usan una mancha elíptica.
+- Sombras de canica dinámicas: se separan, crecen y aclaran con `airTime`, lo que simula altura sin añadir un eje Z a la física.
+- Orden de profundidad: las piezas visibles se ordenan por `y` antes de dibujar.
+- Parallax de fondo: el charco de luz de estudio se desplaza un 1,8 % de la cámara, con tope de ±90 px.
+- Motion blur: 3 estelas de la esfera a partir de 760 u/s; polvo y microsacudida al aterrizar.
+- Combo: pulso de zoom del 1,4 % (solo render) y destello radial cálido.
+
+**Post-proceso (`postfx.ts`, a resolución de dispositivo):**
+- Copia a 1/4–1/3 de resolución reutilizada por frame.
+- Bloom: copia sumada con `lighter` a alpha 0,07.
+- Tilt-shift: la copia se enmascara con un gradiente vertical (bandas superior e inferior ~17 %) y sustituye al fondo nítido.
+- Aberración cromática: canales R y C desplazados ±0,55 px con `screen` a alpha 0,10 (solo calidad alta).
+- Grano animado: patrón de ruido 160 × 160 con `overlay` a alpha 0,04.
+- Viñeta y luz cálida horneadas una vez por redimensionado.
+- En calidad baja solo se dibuja la viñeta; en media se omite aberración y tilt-shift.
 
 ---
 
