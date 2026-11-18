@@ -6,6 +6,8 @@ const CELL = 64;
 const MAX_SPEED = 3400;
 const GRAVITY = 1800;
 const SLOP = 0.5;
+const BUBBLE_RISE = -190;
+const BUBBLE_LIFE = 8;
 
 interface SpiralInfo {
   pieceId: number;
@@ -99,6 +101,10 @@ export class PhysicsWorld {
   }
 
   private stepMarble(m: Marble, dt: number, now: number) {
+    if (m.bubbled) {
+      this.stepBubble(m, dt, now);
+      return;
+    }
     if (m.ridePiece) {
       this.stepRide(m, dt);
       return;
@@ -219,8 +225,59 @@ export class PhysicsWorld {
     }
   }
 
+  private stepBubble(m: Marble, dt: number, now: number) {
+    m.px = m.x;
+    m.py = m.y;
+    m.bubbleT += dt;
+    m.vy += (BUBBLE_RISE - m.vy) * Math.min(1, dt * 3.2);
+    m.vx *= Math.exp(-dt * 1.2);
+    m.x += m.vx * dt;
+    m.y += m.vy * dt;
+    m.contact = 0;
+    m.airTime = 0;
+    m.sleepTimer = 0;
+    m.awake = true;
+    this.applyFields(m, dt, now);
+    this.checkTriggers(m, now);
+    if (m.bubbled && m.bubbleT > BUBBLE_LIFE) this.popBubble(m);
+  }
+
+  private popBubble(m: Marble) {
+    if (!m.bubbled) return;
+    m.bubbled = false;
+    m.bubbleT = 0;
+    m.vy = Math.max(60, m.vy * 0.2);
+    m.vx *= 0.7;
+    m.awake = true;
+    m.contact = 0;
+    m.airTime = 0;
+    this.events.push({
+      type: 'pop',
+      x: m.x,
+      y: m.y,
+      pieceId: 0,
+      note: -1,
+      impact: 0,
+      marbleId: m.id,
+      speed: Math.hypot(m.vx, m.vy)
+    });
+  }
+
   private applyFields(m: Marble, h: number, now: number) {
     for (const t of this.triggers) {
+      if (m.bubbled) {
+        if (t.kind === 'mill' && this.inTriggerRect(m, t)) {
+          m.vx += t.dx * t.power * h;
+          m.vy += t.dy * t.power * h * 0.35;
+          const sp = Math.hypot(m.vx, m.vy);
+          if (sp > 900) {
+            const k = 900 / sp;
+            m.vx *= k;
+            m.vy *= k;
+          }
+        }
+        continue;
+      }
       if (t.kind === 'boost') {
         if (!this.inTriggerRect(m, t)) continue;
         m.vx += t.dx * t.power * h;
@@ -269,6 +326,15 @@ export class PhysicsWorld {
   }
 
   private checkTriggers(m: Marble, now: number) {
+    if (m.bubbled) {
+      for (const t of this.triggers) {
+        if (t.kind === 'spike' && this.inTriggerCircle(m, t)) {
+          this.popBubble(m);
+          return;
+        }
+      }
+      return;
+    }
     for (const t of this.triggers) {
       if (t.disabledUntil > now) continue;
       if (t.kind === 'goal') {
@@ -301,6 +367,27 @@ export class PhysicsWorld {
           t.disabledUntil = now + 5000;
           return;
         }
+      } else if (t.kind === 'bubbleLift') {
+        if (!this.inTriggerCircle(m, t)) continue;
+        m.bubbled = true;
+        m.bubbleT = 0;
+        m.vx *= 0.25;
+        m.vy = -40;
+        m.contact = 0;
+        m.airTime = 0;
+        m.sleepTimer = 0;
+        m.awake = true;
+        this.events.push({
+          type: 'bubble',
+          x: m.x,
+          y: m.y,
+          pieceId: t.pieceId,
+          note: -1,
+          impact: 0,
+          marbleId: m.id,
+          speed: Math.hypot(m.vx, m.vy)
+        });
+        return;
       } else if (t.kind === 'spiral') {
         if (m.ridePiece) continue;
         if (!this.inTriggerCircle(m, t)) continue;
@@ -529,10 +616,10 @@ export class PhysicsWorld {
     const n = marbles.length;
     for (let i = 0; i < n; i++) {
       const a = marbles[i];
-      if (!a.alive) continue;
+      if (!a.alive || a.bubbled) continue;
       for (let j = i + 1; j < n; j++) {
         const b = marbles[j];
-        if (!b.alive) continue;
+        if (!b.alive || b.bubbled) continue;
         if (!a.awake && !b.awake) continue;
         let dx = b.x - a.x;
         let dy = b.y - a.y;
@@ -663,6 +750,8 @@ export function createMarble(
     rideNextChime: 0,
     rideScale: 1,
     rideDepth: 0,
+    bubbled: false,
+    bubbleT: 0
   };
 }
 

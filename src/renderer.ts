@@ -1,7 +1,9 @@
 import type { Game } from './game';
 import type { Marble, Piece } from './types';
 import {
+  drawBubbleSprite,
   drawMarbleSprite,
+  drawMillRotor,
   drawPiece,
   drawSoftShadow,
   getPieceShadow,
@@ -19,7 +21,8 @@ import {
   xyloLayout
 } from './pieces';
 import { PostFX } from './postfx';
-import { clamp, lerp, prefersReducedMotion, rgba, TAU, CAMERA_TILT } from './util';
+import { clamp, hash2, lerp, prefersReducedMotion, rgba, TAU, CAMERA_TILT } from './util';
+import { WORLD_THEMES, worldTheme } from './worlds';
 
 interface Dust {
   x: number;
@@ -48,6 +51,7 @@ export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private game: Game;
   private post = new PostFX();
+  private theme = WORLD_THEMES[0];
   private width = 1;
   private height = 1;
   private dpr = 1;
@@ -117,9 +121,10 @@ export class Renderer {
     const dt = Math.min(0.05, Math.max(0, (now - this.lastRender) / 1000));
     this.lastRender = now;
     const zoom = cam.zoom;
+    this.theme = worldTheme(g.activeWorld);
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = PALETTE.paper;
+    ctx.fillStyle = this.theme.paper;
     ctx.fillRect(0, 0, w, h);
     this.drawBackdrop(ctx, w, h, cam, now);
 
@@ -180,7 +185,7 @@ export class Renderer {
       ctx.save();
       ctx.translate(temp.x, temp.y);
       ctx.rotate(temp.rot);
-      ctx.strokeStyle = rgba(PALETTE.ink, 0.35);
+      ctx.strokeStyle = rgba(this.theme.ink, 0.35);
       ctx.lineWidth = 1.6 / zoom;
       ctx.setLineDash([6 / zoom, 5 / zoom]);
       const hs = pieceHitSize(temp);
@@ -229,14 +234,16 @@ export class Renderer {
     cam: { x: number; y: number },
     now: number
   ) {
+    const theme = this.theme;
     const px = clamp(-cam.x * 0.018, -90, 90);
     const py = clamp(-cam.y * 0.018, -70, 70);
     const pulse = 0.5 + 0.5 * Math.sin(now * 0.00022);
+    const space = theme.kind === 'space';
 
     const g1 = ctx.createRadialGradient(w * 0.26 + px, h * 0.1 + py, 0, w * 0.26 + px, h * 0.1 + py, Math.max(w, h) * 0.95);
-    g1.addColorStop(0, `rgba(255,252,242,${0.26 + pulse * 0.04})`);
-    g1.addColorStop(0.55, 'rgba(255,252,242,0.1)');
-    g1.addColorStop(1, 'rgba(255,252,242,0)');
+    g1.addColorStop(0, theme.light);
+    g1.addColorStop(0.55, space ? 'rgba(120,150,255,0.045)' : 'rgba(255,252,242,0.09)');
+    g1.addColorStop(1, space ? 'rgba(120,150,255,0)' : 'rgba(255,252,242,0)');
     ctx.fillStyle = g1;
     ctx.fillRect(0, 0, w, h);
 
@@ -248,10 +255,147 @@ export class Renderer {
       h * 0.92 - py * 0.6,
       Math.max(w, h) * 0.85
     );
-    g2.addColorStop(0, 'rgba(35,33,28,0.05)');
-    g2.addColorStop(1, 'rgba(35,33,28,0)');
+    g2.addColorStop(0, theme.shade);
+    g2.addColorStop(1, space ? 'rgba(0,0,0,0)' : 'rgba(35,33,28,0)');
     ctx.fillStyle = g2;
     ctx.fillRect(0, 0, w, h);
+
+    this.drawWorldDecor(ctx, w, h, cam, now, pulse);
+  }
+
+  private drawWorldDecor(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    cam: { x: number; y: number },
+    now: number,
+    pulse: number
+  ) {
+    const kind = this.theme.kind;
+    const ox = clamp(-cam.x * 0.03, -60, 60);
+    const oy = clamp(-cam.y * 0.03, -40, 40);
+
+    if (kind === 'ocean') {
+      ctx.strokeStyle = 'rgba(46,158,151,0.075)';
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = 'round';
+      for (let band = 0; band < 2; band++) {
+        const base = band === 0 ? h * 0.16 : h * 0.86;
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          for (let x = -20; x <= w + 20; x += 22) {
+            const y = base + i * 12 + Math.sin(x * 0.012 + now * 0.0009 + i * 1.7) * 5;
+            if (x === -20) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+      }
+
+      for (let i = 0; i < 14; i++) {
+        const seed = hash2(i + 1, 7);
+        const x = ((seed % 1000) / 1000) * w + ox;
+        const r = 2 + ((seed >>> 10) % 5);
+        const baseY = ((seed >>> 4) % 1000) / 1000;
+        const y = ((baseY * h - now * 0.006 + i * 40) % (h + 80) + h + 80) % (h + 80) - 40;
+        ctx.fillStyle = 'rgba(255,255,255,0.13)';
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, TAU);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(46,158,151,0.12)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = 'rgba(46,158,151,0.06)';
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 3; i++) {
+        const bx = w * 0.06 + i * 26 + ox * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(bx, h + 10);
+        ctx.bezierCurveTo(bx - 14, h * 0.82, bx + 24, h * 0.72, bx + 4, h * 0.58);
+        ctx.stroke();
+      }
+      return;
+    }
+
+    if (kind === 'sky') {
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      const clouds: [number, number, number][] = [
+        [0.18, 0.2, 1],
+        [0.72, 0.28, 0.85],
+        [0.46, 0.12, 0.7],
+        [0.86, 0.62, 0.6],
+        [0.12, 0.72, 0.5]
+      ];
+      for (let i = 0; i < clouds.length; i++) {
+        const [cx, cy, sc] = clouds[i];
+        const drift = Math.sin(now * 0.00005 + i * 2.1) * 26;
+        const x = cx * w + ox * 0.7 + drift;
+        const y = cy * h + oy * 0.5;
+        const rr = 52 * sc;
+        ctx.beginPath();
+        ctx.ellipse(x, y, rr * 1.5, rr * 0.5, 0, 0, TAU);
+        ctx.ellipse(x - rr, y + rr * 0.15, rr * 0.8, rr * 0.38, 0, 0, TAU);
+        ctx.ellipse(x + rr * 1.1, y + rr * 0.12, rr * 0.9, rr * 0.4, 0, 0, TAU);
+        ctx.fill();
+      }
+
+      ctx.strokeStyle = 'rgba(60,90,120,0.12)';
+      ctx.lineWidth = 1.4;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 4; i++) {
+        const seed = hash2(i + 3, 11);
+        const x = ((seed % 1000) / 1000) * w * 0.7 + w * 0.2 + ox;
+        const y = h * 0.18 + ((seed >>> 8) % 100) + oy;
+        const flap = Math.sin(now * 0.002 + i) * 2.5;
+        ctx.beginPath();
+        ctx.moveTo(x - 7, y + flap);
+        ctx.quadraticCurveTo(x - 2, y - 3, x, y);
+        ctx.quadraticCurveTo(x + 2, y - 3, x + 7, y + flap);
+        ctx.stroke();
+      }
+      return;
+    }
+
+    if (kind === 'space') {
+      const neb = ctx.createRadialGradient(w * 0.72 + ox * 0.4, h * 0.3 + oy * 0.4, 0, w * 0.72 + ox * 0.4, h * 0.3 + oy * 0.4, Math.max(w, h) * 0.6);
+      neb.addColorStop(0, 'rgba(125,91,166,0.1)');
+      neb.addColorStop(0.5, 'rgba(61,126,166,0.05)');
+      neb.addColorStop(1, 'rgba(13,16,32,0)');
+      ctx.fillStyle = neb;
+      ctx.fillRect(0, 0, w, h);
+
+      const planet = ctx.createRadialGradient(w * 0.84 + ox, h * 0.2 + oy, 4, w * 0.84 + ox, h * 0.2 + oy, 74);
+      planet.addColorStop(0, 'rgba(125,91,166,0.14)');
+      planet.addColorStop(0.7, 'rgba(61,126,166,0.06)');
+      planet.addColorStop(1, 'rgba(13,16,32,0)');
+      ctx.fillStyle = planet;
+      ctx.beginPath();
+      ctx.arc(w * 0.84 + ox, h * 0.2 + oy, 74, 0, TAU);
+      ctx.fill();
+
+      for (let i = 0; i < 90; i++) {
+        const seed = hash2(i + 1, 23);
+        const x = ((seed % 1000) / 1000) * w;
+        const y = (((seed >>> 9) % 1000) / 1000) * h;
+        const tw = 0.18 + 0.22 * (0.5 + 0.5 * Math.sin(now * 0.0012 + i * 1.7));
+        const size = (seed >>> 20) % 5 === 0 ? 2 : 1.2;
+        ctx.fillStyle = `rgba(220,230,255,${tw})`;
+        ctx.fillRect(x + ox * 0.3, y + oy * 0.3, size, size);
+      }
+      return;
+    }
+
+    // Estudio: un polvo de papel casi invisible.
+    ctx.fillStyle = 'rgba(35,33,28,0.035)';
+    for (let i = 0; i < 18; i++) {
+      const seed = hash2(i + 5, 3);
+      const x = ((seed % 1000) / 1000) * w + Math.sin(now * 0.0002 + i) * 10;
+      const y = (((seed >>> 8) % 1000) / 1000) * h + Math.cos(now * 0.00017 + i * 1.3) * 8;
+      ctx.fillRect(x, y, 1.4, 1.4);
+    }
+    void pulse;
   }
 
   private drawPieceShadow(ctx: CanvasRenderingContext2D, p: Piece) {
@@ -329,7 +473,7 @@ export class Renderer {
     const maxDots = 4200;
     const n = ((maxX - minX) / step) * ((maxY - minY) / step);
     if (n > maxDots) return;
-    ctx.fillStyle = 'rgba(220,214,200,0.62)';
+    ctx.fillStyle = this.theme.grid;
     const size = 2.3;
     for (let x = startX; x <= maxX; x += step) {
       for (let y = startY; y <= maxY; y += step) {
@@ -373,7 +517,22 @@ export class Renderer {
       }
     }
 
+    if (def.id === 'mill') drawMillRotor(ctx, now * 0.0024);
+
     drawPiece(ctx, p);
+
+    if (def.id === 'bubbleLift') {
+      const k = 0.5 + 0.5 * Math.sin(now * 0.003);
+      ctx.strokeStyle = `rgba(143,211,238,${0.12 + 0.12 * k})`;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.ellipse(0, -8, 52 + k * 4, 52 + k * 4, 0, 0, TAU);
+      ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const yy = -64 - ((now * 0.03 + i * 34) % 70);
+        drawBubbleSprite(ctx, -20 + i * 20, yy, 4.5, 0.5);
+      }
+    }
 
     if (p.defId === 'conveyor') {
       const offset = (now * 0.07) % 54;
@@ -506,11 +665,13 @@ export class Renderer {
     if (!type) return;
     const x = m.awake ? lerp(m.px, m.x, alpha) : m.x;
     const y = m.awake ? lerp(m.py, m.y, alpha) : m.y;
+    const sway = m.bubbled ? Math.sin(now * 0.003 + m.id) * 2.5 : 0;
+    const bx = x + sway;
     const air = clamp(m.airTime ?? 0, 0, 1.6);
     const lift = Math.min(1, air / 1.15);
 
     // Sombra proyectada: se separa y se aclara cuando la canica va por el aire.
-    if (this.level < 2) {
+    if (!m.bubbled && this.level < 2) {
       drawSoftShadow(
         ctx,
         x + 3.5 + lift * 7,
@@ -530,7 +691,7 @@ export class Renderer {
         drawMarbleSprite(
           ctx,
           type,
-          x - m.vx * back,
+          bx - m.vx * back,
           y - m.vy * back,
           m.r * (1 + lift * 0.1),
           (0.16 - i * 0.035) * t
@@ -557,7 +718,7 @@ export class Renderer {
       const glow = 0.12 + 0.05 * Math.sin(now * 0.004 + m.id);
       ctx.fillStyle = rgba(type.glow ?? type.color, glow);
       ctx.beginPath();
-      ctx.arc(x, y, m.r * (2.4 + lift * 0.4), 0, TAU);
+      ctx.arc(bx, y, m.r * (2.4 + lift * 0.4), 0, TAU);
       ctx.fill();
     }
 
@@ -566,7 +727,13 @@ export class Renderer {
     const rideScale = m.ridePiece ? m.rideScale : 1;
     // Al ir por el aire se agranda un poco: lee como altura, no como escala.
     const airScale = 1 + lift * (0.1 + Math.min(0.08, air * 0.1));
-    drawMarbleSprite(ctx, type, x, y, m.r * grow * rideScale * airScale);
+    drawMarbleSprite(ctx, type, bx, y, m.r * grow * rideScale * airScale);
+    if (m.bubbled) {
+      const pulse = 1 + 0.02 * Math.sin(now * 0.004 + m.id);
+      drawBubbleSprite(ctx, bx, y, m.r * 1.72 * pulse, 0.95);
+      drawBubbleSprite(ctx, bx - m.r * 1.25, y - m.r * 0.8, m.r * 0.22, 0.45);
+      drawBubbleSprite(ctx, bx + m.r * 1.2, y - m.r * 1.1, m.r * 0.15, 0.35);
+    }
   }
 
   private drawSelection(ctx: CanvasRenderingContext2D, p: Piece, zoom: number) {
@@ -576,7 +743,7 @@ export class Renderer {
     ctx.rotate(p.rot);
     ctx.setLineDash([7 / zoom, 5 / zoom]);
     ctx.lineWidth = 2 / zoom;
-    ctx.strokeStyle = rgba(PALETTE.ink, 0.55);
+    ctx.strokeStyle = rgba(this.theme.ink, 0.55);
     ctx.strokeRect(-hs.w / 2 - 5, -hs.h / 2 - 5, hs.w + 10, hs.h + 10);
     ctx.setLineDash([]);
     ctx.restore();
@@ -585,7 +752,7 @@ export class Renderer {
   private drawDropPreview(ctx: CanvasRenderingContext2D, p: { x: number; y: number }, zoom: number) {
     ctx.save();
     ctx.setLineDash([5 / zoom, 5 / zoom]);
-    ctx.strokeStyle = rgba(PALETTE.ink, 0.25);
+    ctx.strokeStyle = rgba(this.theme.ink, 0.25);
     ctx.lineWidth = 1.4 / zoom;
     ctx.beginPath();
     ctx.moveTo(p.x, p.y - 110);

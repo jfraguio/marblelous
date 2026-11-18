@@ -17,6 +17,8 @@ La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al do
 - Cambia a la canica y toca el lienzo para soltar una; mantén pulsado para hacer lluvia.
 - Dos dedos para mover y hacer zoom.
 - Todas las piezas y canicas están disponibles desde el principio. No hay tienda.
+- En Ajustes > Mundos puedes cambiar entre cuatro escenarios con fondos sutiles: Normal, Fondo marino, Cielo y Espacio.
+- La **Burbuja ascensora** atrapa la canica en un aro de jabón y la hace flotar. Con el **Molino** la desvías y con el **Pincho** la haces estallar sobre otra pista para crear tramos aéreos.
 - En ajustes, “Borrar canvas” vacía el escenario actual; puedes deshacerlo.
 
 ## Desarrollo

@@ -7,6 +7,7 @@ import {
   pieceHitSize,
 } from './pieces';
 import { drawPreview } from './art';
+import { WORLD_THEMES } from './worlds';
 import { clamp, fmt, icon, prefersReducedMotion, shortAngle } from './util';
 
 const $ = <T extends Element = HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -22,8 +23,6 @@ export class UI {
   combo = $('#combo');
   comboMult = $('#combo-mult');
   comboRing = $('.combo-ring');
-  btnUndo = $('#btn-undo') as HTMLButtonElement;
-  btnRedo = $('#btn-redo') as HTMLButtonElement;
   btnClear = $('#btn-clear') as HTMLButtonElement;
   btnSound = $('#btn-sound');
   soundIcon = $('#sound-icon');
@@ -60,14 +59,6 @@ export class UI {
   private bind() {
     $('#mode-build').addEventListener('click', () => this.setMode('build'));
     $('#mode-play').addEventListener('click', () => this.setMode('play'));
-    this.btnUndo.addEventListener('click', () => {
-      this.game.undo();
-      this.refreshAll();
-    });
-    this.btnRedo.addEventListener('click', () => {
-      this.game.redo();
-      this.refreshAll();
-    });
     $('#btn-recenter').addEventListener('click', () => {
       this.game.recenter();
       this.game.audio.ui();
@@ -167,8 +158,6 @@ export class UI {
 
   refreshHud() {
     this.sparks.textContent = fmt(this.game.currency);
-    this.btnUndo.disabled = !this.game.canUndo;
-    this.btnRedo.disabled = !this.game.canRedo;
     this.btnClear.disabled = this.game.marbles.length === 0;
     const cap = this.game.pieces.length;
     this.capacity.classList.toggle('is-hidden', cap < 1800);
@@ -356,17 +345,18 @@ export class UI {
     rows.push(this.buildRow('haptics', 'Vibración', this.dots(s.haptics && !ios ? 1 : 0, 1), 'haptics'));
     const worldDots = this.game.worlds
       .map((_, i) => {
-        const color = ['#3D7EA6', '#4F9D69', '#D26D8C'][i];
-        return `<button class="world-dot${this.game.activeWorld === i ? ' on' : ''}" data-world="${i}" style="--dot:${color}" aria-label="Mundo ${i + 1}"></button>`;
+        const theme = WORLD_THEMES[i] ?? WORLD_THEMES[0];
+        return `<button class="world-dot${this.game.activeWorld === i ? ' on' : ''}" data-world="${i}" style="--dot:${theme.accent}" title="${theme.name}" aria-label="Mundo ${i + 1}: ${theme.name}"></button>`;
       })
       .join('');
+    const worldName = (WORLD_THEMES[this.game.activeWorld] ?? WORLD_THEMES[0]).name;
     rows.push(`<div class="set-row">
       <div class="set-ic">${icon('world')}</div>
       <div class="set-label">Mundos</div>
-      <div class="set-value world-dots">${worldDots}</div>
+      <div class="set-value world-dots">${worldDots}<span class="world-now">${worldName}</span></div>
     </div>`);
     rows.push(this.buildRow('trash', 'Borrar canvas', '', 'clear', 'reset-row'));
-    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.5.1 · sin datos · sin red</span></div>`);
+    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.6.0 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
     this.settingsBody.querySelectorAll<HTMLElement>('.set-row.tap').forEach((row) => {
@@ -394,6 +384,7 @@ export class UI {
         e.stopPropagation();
         const i = Number(dot.dataset.world);
         this.game.setWorld(i);
+        this.toast('world', (WORLD_THEMES[i] ?? WORLD_THEMES[0]).name);
         this.closeOverlays();
       });
     });

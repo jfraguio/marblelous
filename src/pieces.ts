@@ -56,7 +56,7 @@ export const MARBLE_TYPES: MarbleType[] = [
     id: 'crystal',
     label: 'Canica de cristal',
     price: 0,
-    r: 27,
+    r: 22.95,
     density: 1,
     e: 0.45,
     mu: 0.18,
@@ -68,7 +68,7 @@ export const MARBLE_TYPES: MarbleType[] = [
     id: 'rubber',
     label: 'Canica de goma',
     price: 250,
-    r: 28.5,
+    r: 24.225,
     density: 0.85,
     e: 0.82,
     mu: 0.35,
@@ -80,7 +80,7 @@ export const MARBLE_TYPES: MarbleType[] = [
     id: 'steel',
     label: 'Canica de acero',
     price: 600,
-    r: 25.5,
+    r: 21.675,
     density: 2.6,
     e: 0.25,
     mu: 0.08,
@@ -92,7 +92,7 @@ export const MARBLE_TYPES: MarbleType[] = [
     id: 'comet',
     label: 'Canica cometa',
     price: 1500,
-    r: 27,
+    r: 22.95,
     density: 1,
     e: 0.4,
     mu: 0.15,
@@ -106,7 +106,7 @@ export const MARBLE_TYPES: MarbleType[] = [
     id: 'plasma',
     label: 'Canica plasma',
     price: 2500,
-    r: 27,
+    r: 22.95,
     density: 0.9,
     e: 0.5,
     mu: 0.12,
@@ -384,6 +384,39 @@ const defs: PieceDef[] = [
     }
   },
   {
+    id: 'spike',
+    category: 'energy',
+    price: 0,
+    label: 'Pincho',
+    w: 70,
+    h: 100,
+    tintable: false,
+    defaultColor: 0,
+    build: (p) => {
+      const tip = tx(p, 0, 34);
+      return {
+        colliders: [],
+        triggers: [
+          {
+            kind: 'spike',
+            x: tip.x,
+            y: tip.y,
+            w: 0,
+            h: 0,
+            r: 26,
+            rot: p.rot,
+            power: 0,
+            pieceId: p.id,
+            disabledUntil: 0,
+            dx: 0,
+            dy: 0,
+            pairId: 0
+          }
+        ]
+      };
+    }
+  },
+  {
     id: 'booster',
     category: 'energy',
     price: 600,
@@ -576,6 +609,39 @@ const defs: PieceDef[] = [
     }
   },
   {
+    id: 'bubbleLift',
+    category: 'energy',
+    price: 0,
+    label: 'Burbuja ascensora',
+    w: 130,
+    h: 150,
+    tintable: false,
+    defaultColor: 0,
+    build: (p) => {
+      const center = tx(p, 0, -10);
+      return {
+        colliders: [],
+        triggers: [
+          {
+            kind: 'bubbleLift',
+            x: center.x,
+            y: center.y,
+            w: 0,
+            h: 0,
+            r: 46,
+            rot: p.rot,
+            power: 0,
+            pieceId: p.id,
+            disabledUntil: 0,
+            dx: 0,
+            dy: 0,
+            pairId: 0
+          }
+        ]
+      };
+    }
+  },
+  {
     id: 'portal',
     category: 'energy',
     price: 0,
@@ -611,6 +677,39 @@ const defs: PieceDef[] = [
         colliders: [],
         triggers: [
           { kind: 'fan', x: p.x, y: p.y, w: 96, h: 200, r: 0, rot: p.rot, power: 3400, pieceId: p.id, disabledUntil: 0, dx: up.x, dy: up.y, pairId: 0 }
+        ]
+      };
+    }
+  },
+  {
+    id: 'mill',
+    category: 'energy',
+    price: 0,
+    label: 'Molino',
+    w: 150,
+    h: 150,
+    tintable: false,
+    defaultColor: 0,
+    build: (p) => {
+      const side = dir(p, 1, 0);
+      return {
+        colliders: [],
+        triggers: [
+          {
+            kind: 'mill',
+            x: p.x,
+            y: p.y,
+            w: 240,
+            h: 150,
+            r: 0,
+            rot: p.rot,
+            power: 900,
+            pieceId: p.id,
+            disabledUntil: 0,
+            dx: side.x,
+            dy: side.y,
+            pairId: 0
+          }
         ]
       };
     }
@@ -724,13 +823,16 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'conveyor', category: 'build', price: 850, label: 'Cinta', kind: 'piece' },
   { id: 'spiral', category: 'build', price: 0, label: 'Caída en espiral', kind: 'piece' },
   { id: 'bubble', category: 'energy', price: 0, label: 'Burbuja', kind: 'piece' },
+  { id: 'bubbleLift', category: 'energy', price: 0, label: 'Burbuja ascensora', kind: 'piece' },
   { id: 'portal', category: 'energy', price: 0, label: 'Portales', kind: 'piece' },
   { id: 'fan', category: 'energy', price: 0, label: 'Ventilador', kind: 'piece' },
+  { id: 'mill', category: 'energy', price: 0, label: 'Molino', kind: 'piece' },
   { id: 'xylo5', category: 'music', price: 650, label: 'Xilófono 5', kind: 'piece' },
   { id: 'xylo8', category: 'music', price: 1100, label: 'Xilófono 8', kind: 'piece' },
   { id: 'booster', category: 'energy', price: 600, label: 'Propulsor', kind: 'piece' },
   { id: 'cannon', category: 'energy', price: 900, label: 'Cañón', kind: 'piece' },
   { id: 'bumper', category: 'energy', price: 800, label: 'Parachoques', kind: 'piece' },
+  { id: 'spike', category: 'energy', price: 0, label: 'Pincho', kind: 'piece' },
   { id: 'star', category: 'energy', price: 350, label: 'Estrella', kind: 'piece' },
   { id: 'goal', category: 'energy', price: 0, label: 'Campana', kind: 'piece' },
   { id: 'magnet', category: 'energy', price: 1400, label: 'Imán', kind: 'piece' },

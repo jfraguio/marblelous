@@ -9,10 +9,6 @@ export class AudioEngine {
   private bus: GainNode | null = null;
   private comp: DynamicsCompressorNode | null = null;
   private noise: AudioBuffer | null = null;
-  private rollingGain: GainNode | null = null;
-  private rollingFilter: BiquadFilterNode | null = null;
-  private rollingPan: StereoPannerNode | null = null;
-  private rollingSource: AudioBufferSourceNode | null = null;
   private level: 0 | 1 | 2 = 2;
   private active = 0;
   private lastUi = 0;
@@ -36,7 +32,6 @@ export class AudioEngine {
         /* noop */
       }
     }
-    this.startRolling();
   }
 
   private ensure(): Ctx | null {
@@ -70,7 +65,6 @@ export class AudioEngine {
     this.master = master;
     this.bus = bus;
     this.noise = this.makeNoise(ctx, 2);
-    this.startRolling();
     // iOS unlock
     try {
       const b = ctx.createBuffer(1, 1, ctx.sampleRate);
@@ -90,9 +84,6 @@ export class AudioEngine {
       const v = level === 0 ? 0 : level === 1 ? 0.38 : 0.78;
       this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.03);
     }
-    if (this.ctx && this.rollingGain && level === 0) {
-      this.rollingGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
-    }
   }
 
   getLevel() {
@@ -101,7 +92,6 @@ export class AudioEngine {
 
   suspend() {
     if (!this.ctx) return;
-    this.rollingGain?.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
     try {
       void this.ctx.suspend();
     } catch {
@@ -129,41 +119,6 @@ export class AudioEngine {
       data[i] = last * 3.2;
     }
     return buf;
-  }
-
-  private startRolling() {
-    const ctx = this.ctx;
-    if (!ctx || !this.noise || !this.bus || this.rollingSource) return;
-    const source = ctx.createBufferSource();
-    source.buffer = this.noise;
-    source.loop = true;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 720;
-    filter.Q.value = 0.8;
-    const gain = ctx.createGain();
-    gain.gain.value = 0;
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = 0;
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(pan);
-    pan.connect(this.bus);
-    source.start(0);
-    this.rollingSource = source;
-    this.rollingFilter = filter;
-    this.rollingGain = gain;
-    this.rollingPan = pan;
-  }
-
-  updateRolling(energy: number, panX: number) {
-    const ctx = this.ctx;
-    if (!ctx || !this.rollingGain || !this.rollingFilter || !this.rollingPan) return;
-    const t = ctx.currentTime;
-    const target = this.level === 0 ? 0 : clamp(energy * 0.035, 0, 0.12);
-    this.rollingGain.gain.setTargetAtTime(target, t, 0.09);
-    this.rollingFilter.frequency.setTargetAtTime(520 + clamp(energy, 0, 1) * 900, t, 0.14);
-    this.rollingPan.pan.setTargetAtTime(clamp(panX, -1, 1), t, 0.12);
   }
 
   private pan(value: number) {
@@ -351,6 +306,13 @@ export class AudioEngine {
     this.noiseBurst(0.1, 1400, 0.07, panX, 'bandpass');
     this.tone(260, 0.2, 0.08, panX, 'sine', 760);
     this.tone(620, 0.16, 0.035, panX, 'triangle', 980);
+  }
+
+  pop(panX: number) {
+    if (this.level === 0) return;
+    this.ensure();
+    this.noiseBurst(0.045, 2600, 0.08, panX, 'highpass');
+    this.tone(760, 0.12, 0.05, panX, 'sine', 1500);
   }
 
   goal(panX: number) {

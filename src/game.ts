@@ -221,7 +221,6 @@ export class Game {
     this.overlayOpen = open;
     if (open) {
       this.save();
-      this.audio.updateRolling(0, 0);
     } else {
       this.accumulator = 0;
       this.last = performance.now();
@@ -684,6 +683,16 @@ export class Game {
       } else if (e.type === 'spiral') {
         this.audio.portal(pan);
         this.spawnBurst(e.x, e.y, PALETTE.teal, 8, 1);
+      } else if (e.type === 'bubble') {
+        this.audio.bubble(pan);
+        this.spawnBurst(e.x, e.y, '#8FD3EE', 12, 1);
+        this.spawnBurst(e.x, e.y, PALETTE.paper3, 6, 0);
+        this.score(6, e.x, e.y, e.marbleId, now);
+      } else if (e.type === 'pop') {
+        this.audio.pop(pan);
+        this.spawnBurst(e.x, e.y, PALETTE.paper3, 8, 0);
+        this.spawnBurst(e.x, e.y, '#8FD3EE', 7, 1);
+        this.score(3, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'portal') {
         this.audio.portal(pan);
         this.spawnBurst(e.x, e.y, PALETTE.purple, 10, 1);
@@ -742,18 +751,10 @@ export class Game {
 
   private updateRecords(now: number) {
     let max = 0;
-    let weightedX = 0;
-    let weight = 0;
-    let grounded = 0;
     for (const m of this.marbles) {
       if (!m.alive) continue;
       const s = Math.hypot(m.vx, m.vy);
       if (s > max) max = s;
-      if (m.contact) {
-        weightedX += m.x * Math.max(40, s);
-        weight += Math.max(40, s);
-        grounded++;
-      }
       if (typeIsPremium(m)) {
         m.trailAcc += 1 / 60;
         if (m.trailAcc > 0.035) {
@@ -768,8 +769,6 @@ export class Game {
       this.dirty = true;
     }
     if (this.dropStats.maxSpeed < max) this.dropStats.maxSpeed = max;
-    const pan = weight > 0 ? clamp((weightedX / weight - this.camera.x) / (this.viewW / 2 / this.camera.zoom), -1, 1) : 0;
-    this.audio.updateRolling(weight > 0 ? Math.min(0.9, grounded * 0.12 + max / 3500) : 0, pan);
     if (now - this.comboAt > 2500 && this.comboChain !== 0) {
       this.comboChain = 0;
       this.ui?.refreshHud();
@@ -1094,6 +1093,7 @@ export class Game {
       worlds: [
         { pieces: starter, camera: { x: 10, y: 30, zoom: 1 }, records: empty().records },
         empty(),
+        empty(),
         empty()
       ],
       settings: {
@@ -1116,7 +1116,7 @@ export class Game {
 
   private normalize(data: SaveData, fallback: SaveData): SaveData {
     const worlds: WorldData[] = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       const w = data.worlds?.[i] ?? fallback.worlds[i];
       const pieces: Piece[] = [];
       for (const raw of w.pieces ?? []) {
@@ -1159,7 +1159,7 @@ export class Game {
       currency: Math.max(0, Number(data.currency) || 0),
       lifetime: Math.max(0, Number(data.lifetime) || 0),
       owned: [...owned],
-      activeWorld: clamp(Number(data.activeWorld) || 0, 0, 2),
+      activeWorld: clamp(Number(data.activeWorld) || 0, 0, 3),
       worlds,
       settings: {
         sound: (data.settings?.sound ?? fallback.settings.sound) as Settings['sound'],
