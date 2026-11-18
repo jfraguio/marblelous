@@ -9,13 +9,6 @@ for (const m of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
   if (raw.startsWith('#')) continue;
   urls.add(raw.startsWith('./') ? raw : `./${raw.replace(/^\//, '')}`);
 }
-// Los chunks dinámicos (modo 3D) no aparecen en index.html: se añaden todos.
-const assets = `${dist}/assets`;
-if (fs.existsSync(assets)) {
-  for (const f of fs.readdirSync(assets)) {
-    if (/\.(js|css|wasm|woff2?)$/.test(f)) urls.add(`./assets/${f}`);
-  }
-}
 const body = `/* Generado en build por scripts/postbuild.mjs */\nself.__MARBLELOUS_PRECACHE = ${JSON.stringify([...urls], null, 2)};\n`;
 fs.writeFileSync(`${dist}/precache-manifest.js`, body);
 console.log(`precache-manifest.js: ${urls.size} recursos`);

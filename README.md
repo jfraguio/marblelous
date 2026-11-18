@@ -18,7 +18,6 @@ La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al do
 - Dos dedos para mover y hacer zoom.
 - Todas las piezas y canicas están disponibles desde el principio. No hay tienda.
 - En ajustes, “Borrar canvas” vacía el escenario actual; puedes deshacerlo.
-- El botón del cubo abre el **Viaje 3D**: un recorrido de canicas con tubo de cristal, sacacorcho, espiral, anillos musicales y cámara en primera persona. Se carga aparte y no afecta al taller 2D.
 
 ## Desarrollo
 

@@ -28,34 +28,6 @@ game.ui = ui;
 if (game.fresh) game.recenter();
 game.start();
 
-// Modo 3D bajo demanda: Three.js y Rapier se cargan en un chunk aparte.
-let rideOpen = false;
-const btn3d = document.getElementById('btn-3d');
-const boot = document.getElementById('ride3d-boot');
-btn3d?.addEventListener('click', async () => {
-  if (rideOpen) return;
-  rideOpen = true;
-  boot?.classList.remove('is-hidden');
-  game.setPaused(true);
-  try {
-    const { openRide3D } = await import('./ride3d');
-    openRide3D({
-      audio,
-      reduceMotion: game.settings.reduceMotion,
-      onClose: () => {
-        rideOpen = false;
-        game.setPaused(false);
-      }
-    });
-  } catch (err) {
-    console.error('No se pudo abrir el viaje 3D', err);
-    rideOpen = false;
-    game.setPaused(false);
-  } finally {
-    boot?.classList.add('is-hidden');
-  }
-});
-
 // útil para soporte y pruebas; no expone datos personales
 (window as unknown as { marblelous: unknown }).marblelous = { game, renderer, ui, input, audio };
 
