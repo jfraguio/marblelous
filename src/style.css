@@ -944,3 +944,236 @@ button:focus-visible {
 }
 
 body.armed #game { cursor: crosshair; }
+
+/* ---------------- Viaje 3D ---------------- */
+
+.ibtn-3d {
+  color: #4a3a12;
+  background: linear-gradient(160deg, #fffaf0, #f2d9a4);
+  border-color: rgba(176, 128, 42, 0.42);
+  box-shadow: 0 2px 0 rgba(35, 33, 28, 0.1), inset 0 1px 0 #fff;
+}
+.ibtn-3d .ic { width: 23px; height: 23px; stroke-width: 1.6; }
+
+.ride3d-boot {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  background: radial-gradient(60% 60% at 50% 40%, #1b2330, #070910 82%);
+  color: #f4ecd9;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+.ride3d-boot.is-hidden { display: none; }
+.ride3d-boot p { margin: 0; opacity: 0.8; }
+.r3d-spinner {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 240, 200, 0.16);
+  border-top-color: #f0c86a;
+  animation: r3dspin 0.9s linear infinite;
+}
+@keyframes r3dspin { to { transform: rotate(360deg); } }
+
+#ride3d {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: #080a10;
+  color: #f4ecd9;
+  overflow: hidden;
+  font-family: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+#ride3d.is-hidden { display: none; }
+#ride3d canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+.r3d-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(125% 95% at 50% 46%, transparent 42%, rgba(3, 5, 9, 0.5) 100%);
+}
+.r3d-fp {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s var(--ease);
+  background:
+    radial-gradient(circle at 50% 50%, transparent 48%, rgba(126, 208, 255, 0.12) 64%, rgba(6, 14, 24, 0.66) 100%),
+    radial-gradient(circle at 32% 22%, rgba(255, 255, 255, 0.12), transparent 24%);
+}
+#ride3d.is-fp .r3d-fp { opacity: 1; }
+
+.r3d-top {
+  position: absolute;
+  top: calc(12px + var(--safe-top));
+  left: calc(16px + var(--safe-left));
+  right: calc(16px + var(--safe-right));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: none;
+}
+.r3d-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55);
+}
+.r3d-brand b { font-size: 14px; font-weight: 800; letter-spacing: 0.24em; }
+.r3d-brand span {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: #efc978;
+  border: 1px solid rgba(239, 201, 120, 0.35);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+.r3d-spacer { flex: 1; }
+.r3d-close {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px 0 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 240, 210, 0.18);
+  background: rgba(16, 21, 31, 0.72);
+  color: #f4ecd9;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.r3d-close .ic { width: 18px; height: 18px; }
+.r3d-close:active { transform: scale(0.96); }
+
+.r3d-dock {
+  position: absolute;
+  left: 50%;
+  bottom: calc(16px + var(--safe-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  padding: 7px;
+  border-radius: 20px;
+  background: rgba(10, 14, 22, 0.7);
+  border: 1px solid rgba(255, 240, 210, 0.14);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.38);
+  pointer-events: auto;
+  max-width: calc(100vw - 24px);
+}
+.r3d-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 42px;
+  padding: 0 13px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #cfd9e7;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, transform 0.12s;
+}
+.r3d-btn .ic { width: 19px; height: 19px; }
+.r3d-btn:hover { background: rgba(255, 255, 255, 0.07); color: #fff; }
+.r3d-btn:active { transform: scale(0.95); }
+.r3d-btn.is-active {
+  background: linear-gradient(180deg, #fae8b8, #e9bd61);
+  border-color: rgba(255, 240, 200, 0.5);
+  color: #241b08;
+  box-shadow: 0 4px 18px rgba(233, 189, 97, 0.28);
+}
+.r3d-btn-primary { color: #f4ecd9; }
+.r3d-btn-accent {
+  background: rgba(46, 158, 151, 0.16);
+  border-color: rgba(111, 224, 211, 0.32);
+  color: #a9f2e8;
+}
+
+.r3d-meta {
+  position: absolute;
+  left: calc(18px + var(--safe-left));
+  bottom: calc(22px + var(--safe-bottom));
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  pointer-events: none;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+.r3d-stat { display: flex; flex-direction: column; gap: 2px; }
+.r3d-stat span { font-size: 9.5px; font-weight: 700; letter-spacing: 0.16em; color: #93a3b8; text-transform: uppercase; }
+.r3d-stat b { font-size: 19px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+.r3d-stat b small { font-size: 10px; font-weight: 700; color: #93a3b8; margin-left: 2px; }
+
+.r3d-toast {
+  position: absolute;
+  left: 50%;
+  top: 20%;
+  transform: translate(-50%, 8px) scale(0.96);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(14, 18, 27, 0.82);
+  border: 1px solid rgba(239, 201, 120, 0.34);
+  color: #ffe6a8;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s var(--ease);
+}
+.r3d-toast.is-show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+
+.r3d-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(78px + var(--safe-bottom));
+  transform: translateX(-50%);
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(10, 14, 22, 0.55);
+  color: #b9c5d4;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.r3d-hint.is-show { opacity: 1; }
+
+@media (max-width: 720px) {
+  .r3d-brand b { font-size: 12px; letter-spacing: 0.18em; }
+  .r3d-close em, .r3d-btn em { display: none; }
+  .r3d-close { padding: 0 10px; }
+  .r3d-btn { padding: 0 10px; height: 40px; }
+  .r3d-dock { gap: 2px; padding: 6px; }
+  .r3d-meta { bottom: calc(74px + var(--safe-bottom)); left: calc(14px + var(--safe-left)); }
+  .r3d-hint { display: none; }
+}
+
+.r3d-stat b i { font-style: normal; }

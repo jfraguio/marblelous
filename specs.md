@@ -1327,11 +1327,11 @@ for i in steps:
 1. Ajustar tamaño del canvas si cambió (DPR limitado).
 2. Limpiar con --paper (alpha: false en el contexto principal).
 3. Fondo de estudio con parallax leve y rejilla (si zoom ≥ 0,6).
-4. Contexto de cámara: `setTransform` con zoom, `TILT` y sacudida.
+4. Contexto de cámara: `setTransform` con zoom y `TILT`.
 5. Sombras de contacto de las piezas visibles (una pasada bajo todas).
 6. Piezas visibles ordenadas por `y`; `drawImage` del sprite con rotación.
 7. Canicas: sombra dinámica, motion blur y sprite interpolado.
-8. Partículas, polvo de aterrizaje, popups y destello de combo.
+8. Partículas, polvo de aterrizaje y popups.
 9. Fantasma de pieza/canica y selección (si aplica).
 10. Post-proceso: bloom, tilt-shift, aberración cromática, grano y viñeta.
 11. HUD DOM: actualización solo si cambian valores.
@@ -1475,8 +1475,8 @@ Una sola dirección de luz de estudio gobierna toda la escena (`LIGHT_X = -0,56`
 - Sombras de canica dinámicas: se separan, crecen y aclaran con `airTime`, lo que simula altura sin añadir un eje Z a la física.
 - Orden de profundidad: las piezas visibles se ordenan por `y` antes de dibujar.
 - Parallax de fondo: el charco de luz de estudio se desplaza un 1,8 % de la cámara, con tope de ±90 px.
-- Motion blur: 3 estelas de la esfera a partir de 760 u/s; polvo y microsacudida al aterrizar.
-- Combo: pulso de zoom del 1,4 % (solo render) y destello radial cálido.
+- Motion blur: 3 estelas de la esfera a partir de 760 u/s; polvo al aterrizar.
+- Sin sacudida de cámara ni pulso de zoom: la cámara permanece estable.
 
 **Post-proceso (`postfx.ts`, a resolución de dispositivo):**
 - Copia a 1/4–1/3 de resolución reutilizada por frame.
@@ -1959,6 +1959,44 @@ jobs:
 - [ ] Las decisiones abiertas de la sección 18 están resueltas.
 - [ ] El nombre “Marblelous” se mantiene / se cambia.
 - [ ] Quiero que se implemente tal cual / con los cambios anotados.
+
+---
+
+## 20. Modo 3D — “Viaje” (v1.4)
+
+Experiencia 3D opcional, cargada bajo demanda desde el botón de cubo de la barra superior. El taller 2D y el guardado no cambian.
+
+### 20.1 Arquitectura
+
+- **Three.js** (WebGL2) en un chunk dinámico (`ride3d-*.js`, ~150 KB gzip). El bundle 2D no crece.
+- **Recorrido sobre raíl**: una `CatmullRomCurve3` define el trazado; la canica avanza por longitud de arco y su velocidad se integra con la gravedad proyectada sobre la tangente (`v += g·(-tangent.y)·dt`) con resistencia y un mínimo de 4,6 m/s. Es un coaster determinista: no hay bloqueos por colisiones en curvas cerradas.
+- Se evaluó Rapier3D, pero los tubos cerrados con autointersección en el sacacorchos atascaban las canicas; el raíl ofrece el mismo espectáculo con cero jitter y es más barato.
+- Triggers por cruce de `u` (notas, estrellas, boosters y meta), sin sensores físicos.
+- Física de la cámara independiente: órbita con amortiguación, chase exterior al tubo y primera persona.
+
+### 20.2 Escena
+
+- Tubo de cristal translúcido (`TubeGeometry`, 760 × 14) + wireframe tenue como “túnel de neón”.
+- Mesa de madera con textura procedural, borde de latón y placa grabada.
+- Iluminación de estudio: key direccional con sombras 1024, rim frío, dos point lights y `RoomEnvironment` PMREM.
+- Materiales PBR: cristal, goma, acero, cometa emisivo y plasma iridiscente.
+- Post-proceso: bloom contenido, viñeta, grano y aberración cromática sutil.
+- Serial de anillos (10 deco + 8 musicales + 4 boosters) que se ocultan a menos de 1,55 m de la cámara para evitar clipping.
+- Estrellas flotantes, campana final con confeti y polvo de velocidad en primera persona.
+
+### 20.3 Cámaras
+
+- **Cine:** órbita 3/4 con auto-rotación tras 3,5 s de inactividad; drag y pinch.
+- **Persecución:** dron exterior al tubo (2,6 u lateral, 1,4 u arriba) que sigue a la canica líder.
+- **1ª persona:** cámara en el centro de la canica, oculta la esfera y el cristal, muestra el wireframe del túnel, polvo de velocidad y un ligero sesgo hacia el horizonte. FOV 74–83.
+- Sin sacudida de cámara en ningún modo. `reduceMotion` desactiva el polvo de velocidad y el FOV dinámico.
+
+### 20.4 Rendimiento y entrega
+
+- DPR limitado a 1,5; sombras 1024; tubo de ~21k triángulos.
+- El chunk 3D se precachea en el service worker (v5) para uso offline tras la primera apertura.
+- El botón muestra una capa de carga; si WebGL falla, se vuelve al juego 2D y se reanuda la partida.
+- Al cerrar se pausa/reanuda el juego 2D y se liberan geometrías, materiales, texturas, composer y PMREM.
 
 ---
 

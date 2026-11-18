@@ -57,9 +57,6 @@ export class Renderer {
   private lastFrame = 0;
   private lastCheck = 0;
   private lastRender = 0;
-  private shake = 0;
-  private comboPulse = 0;
-  private lastCombo = 0;
   private dust: Dust[] = [];
   private prevAir = new Map<number, number>();
 
@@ -75,12 +72,6 @@ export class Renderer {
     this.lastFrame = performance.now();
     this.lastCheck = this.lastFrame;
     this.lastRender = this.lastFrame;
-  }
-
-  /** Sacudida de cámara (solo visual). `amount` va de 0 a ~1.5. */
-  kick(amount: number) {
-    if (this.game.settings.reduceMotion) return;
-    this.shake = Math.min(13, this.shake + amount * 8);
   }
 
   setLevel(level: number) {
@@ -125,16 +116,7 @@ export class Renderer {
     const reduced = g.settings.reduceMotion;
     const dt = Math.min(0.05, Math.max(0, (now - this.lastRender) / 1000));
     this.lastRender = now;
-
-    // Pulso de combo y sacudida, solo render.
-    if (!reduced && g.comboChain > this.lastCombo && g.comboChain > 1) this.comboPulse = 1;
-    this.lastCombo = g.comboChain;
-    this.comboPulse *= Math.exp(-dt * 4.5);
-    this.shake *= Math.exp(-dt * 8.5);
-    if (reduced) this.shake = 0;
-    const shakeX = this.shake > 0.05 ? (Math.random() * 2 - 1) * this.shake : 0;
-    const shakeY = this.shake > 0.05 ? (Math.random() * 2 - 1) * this.shake : 0;
-    const zoom = cam.zoom * (1 + (reduced ? 0 : this.comboPulse * 0.014));
+    const zoom = cam.zoom;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = PALETTE.paper;
@@ -152,8 +134,8 @@ export class Renderer {
       0,
       0,
       zoom * CAMERA_TILT * dpr,
-      (w / 2 - cam.x * zoom + shakeX) * dpr,
-      (h / 2 - cam.y * zoom * CAMERA_TILT + shakeY) * dpr
+      (w / 2 - cam.x * zoom) * dpr,
+      (h / 2 - cam.y * zoom * CAMERA_TILT) * dpr
     );
     this.drawGrid(minX, maxX, minY, maxY, zoom);
 
@@ -236,16 +218,6 @@ export class Renderer {
       }
     }
 
-    // Destello cálido de combo y pase de post-proceso.
-    if (!reduced && this.comboPulse > 0.015) {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const grad = ctx.createRadialGradient(w / 2, h * 0.45, 0, w / 2, h * 0.45, Math.max(w, h) * 0.62);
-      grad.addColorStop(0, `rgba(233,180,76,${this.comboPulse * 0.13})`);
-      grad.addColorStop(1, 'rgba(233,180,76,0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
-    }
-
     this.post.apply(ctx, this.canvas, w, h, dpr, this.level, now);
   }
 
@@ -319,7 +291,6 @@ export class Renderer {
         size: 1.8 + Math.random() * 2.8
       });
     }
-    this.kick(Math.min(0.5, prev * 0.55));
   }
 
   private updateDust(dt: number) {

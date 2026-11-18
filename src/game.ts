@@ -76,8 +76,7 @@ type History =
 export class Game {
   canvas: HTMLCanvasElement;
   audio: AudioEngine;
-  renderer: { render: (alpha: number, now: number) => void; flash?: () => void; kick?: (amount: number) => void } | null =
-    null;
+  renderer: { render: (alpha: number, now: number) => void; flash?: () => void } | null = null;
   ui: UI | null = null;
 
   physics = new PhysicsWorld();
@@ -720,7 +719,6 @@ export class Game {
         if (!this.allow(`tramp:${e.marbleId}:${e.pieceId}`, 340, now)) continue;
         const p = this.pieces.find((x) => x.id === e.pieceId);
         if (p) p.anim = now;
-        this.renderer?.kick?.(0.22);
         this.audio.trampoline(e.impact, pan);
         this.spawnBurst(e.x, e.y, PALETTE.green, 5, 0);
         this.dropStats.tramps++;
@@ -730,13 +728,11 @@ export class Game {
         if (!this.allow(`bump:${e.marbleId}:${e.pieceId}`, 240, now)) continue;
         const p = this.pieces.find((x) => x.id === e.pieceId);
         if (p) p.flash = now;
-        this.renderer?.kick?.(0.34);
         this.audio.bumper(pan);
         this.spawnBurst(e.x, e.y, PALETTE.teal, 6, 1);
         this.score(10, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'cannon') {
         this.audio.cannon(pan);
-        this.renderer?.kick?.(0.24);
         this.spawnBurst(e.x, e.y, PALETTE.purple, 5, 0);
         this.score(2, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'boost') {
@@ -755,7 +751,6 @@ export class Game {
       } else if (e.type === 'loop') {
         if (!this.allow(`loop:${e.marbleId}:${e.pieceId}`, 2600, now)) continue;
         this.audio.loop(pan);
-        this.renderer?.kick?.(0.6);
         this.spawnBurst(e.x, e.y, PALETTE.red, 18, 1);
         this.dropStats.loops++;
         this.records.loops++;
@@ -765,7 +760,6 @@ export class Game {
       } else if (e.type === 'goal') {
         const m = this.marbles.find((x) => x.id === e.marbleId);
         this.audio.goal(pan);
-        this.renderer?.kick?.(1);
         const p = this.pieces.find((x) => x.id === e.pieceId);
         if (p) p.anim = now;
         this.spawnConfetti(e.x, e.y - 20);
@@ -779,7 +773,6 @@ export class Game {
         if (this.settings.haptics) vibrate(18);
       } else if (e.type === 'star') {
         this.audio.star(pan);
-        this.renderer?.kick?.(0.3);
         this.spawnBurst(e.x, e.y, PALETTE.yellow, 12, 1);
         const p = this.pieces.find((x) => x.id === e.pieceId);
         if (p) p.disabledUntil = now + 5000;
