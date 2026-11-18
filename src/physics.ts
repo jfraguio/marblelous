@@ -239,13 +239,27 @@ export class PhysicsWorld {
     m.awake = true;
     this.applyFields(m, dt, now);
     this.checkTriggers(m, now);
+    if (m.bubbled && m.bubbleT > 0.3 && this.bubbleTouchesSolid(m)) this.popBubble(m);
     if (m.bubbled && m.bubbleT > BUBBLE_LIFE) this.popBubble(m);
+  }
+
+  private bubbleTouchesSolid(m: Marble): boolean {
+    const bubbleR = m.r * 1.55;
+    for (const c of this.colliders) {
+      const p = closestOnSegment(m.x, m.y, c.ax, c.ay, c.bx, c.by);
+      const dx = m.x - p.x;
+      const dy = m.y - p.y;
+      const rr = c.r + bubbleR;
+      if (dx * dx + dy * dy <= rr * rr) return true;
+    }
+    return false;
   }
 
   private popBubble(m: Marble) {
     if (!m.bubbled) return;
     m.bubbled = false;
     m.bubbleT = 0;
+    m.bubbleReadyAt = performance.now() + 1200;
     m.vy = Math.max(60, m.vy * 0.2);
     m.vx *= 0.7;
     m.awake = true;
@@ -266,12 +280,12 @@ export class PhysicsWorld {
   private applyFields(m: Marble, h: number, now: number) {
     for (const t of this.triggers) {
       if (m.bubbled) {
-        if (t.kind === 'mill' && this.inTriggerRect(m, t)) {
-          m.vx += t.dx * t.power * h;
-          m.vy += t.dy * t.power * h * 0.35;
+        if (t.kind === 'fan' && this.inTriggerRect(m, t)) {
+          m.vx += t.dx * t.power * h * 0.45;
+          m.vy += t.dy * t.power * h * 0.45;
           const sp = Math.hypot(m.vx, m.vy);
-          if (sp > 900) {
-            const k = 900 / sp;
+          if (sp > 950) {
+            const k = 950 / sp;
             m.vx *= k;
             m.vy *= k;
           }
@@ -312,29 +326,12 @@ export class PhysicsWorld {
           m.vx *= k;
           m.vy *= k;
         }
-      } else if (t.kind === 'magnet') {
-        const dx = t.x - m.x;
-        const dy = t.y - m.y;
-        const d = Math.hypot(dx, dy);
-        if (d > 4 && d < t.r) {
-          const force = (t.power * (1 - d / t.r)) / d;
-          m.vx += dx * force * h;
-          m.vy += dy * force * h;
-        }
       }
     }
   }
 
   private checkTriggers(m: Marble, now: number) {
-    if (m.bubbled) {
-      for (const t of this.triggers) {
-        if (t.kind === 'spike' && this.inTriggerCircle(m, t)) {
-          this.popBubble(m);
-          return;
-        }
-      }
-      return;
-    }
+    if (m.bubbled) return;
     for (const t of this.triggers) {
       if (t.disabledUntil > now) continue;
       if (t.kind === 'goal') {
@@ -368,6 +365,7 @@ export class PhysicsWorld {
           return;
         }
       } else if (t.kind === 'bubbleLift') {
+        if (now < m.bubbleReadyAt) continue;
         if (!this.inTriggerCircle(m, t)) continue;
         m.bubbled = true;
         m.bubbleT = 0;
@@ -751,7 +749,8 @@ export function createMarble(
     rideScale: 1,
     rideDepth: 0,
     bubbled: false,
-    bubbleT: 0
+    bubbleT: 0,
+    bubbleReadyAt: 0
   };
 }
 

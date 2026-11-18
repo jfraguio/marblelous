@@ -26,47 +26,47 @@ export const WORLD_THEMES: WorldTheme[] = [
     ink: '#23211C',
     inkSoft: '#5F5A50',
     accent: '#3D7EA6',
-    light: 'rgba(255,252,242,0.26)',
-    shade: 'rgba(35,33,28,0.05)'
+    light: 'rgba(255,252,242,0.3)',
+    shade: 'rgba(35,33,28,0.06)'
   },
   {
     id: 'ocean',
     name: 'Fondo marino',
     kind: 'ocean',
-    paper: '#E8F1F0',
-    paper2: '#DAEAE7',
-    grid: 'rgba(170,204,200,0.5)',
+    paper: '#DDEDEA',
+    paper2: '#CFE4E0',
+    grid: 'rgba(140,190,185,0.55)',
     ink: '#1E2E2E',
     inkSoft: '#4E6B6B',
     accent: '#2E9E97',
-    light: 'rgba(220,255,250,0.26)',
-    shade: 'rgba(30,80,90,0.06)'
+    light: 'rgba(225,255,250,0.36)',
+    shade: 'rgba(20,70,80,0.1)'
   },
   {
     id: 'sky',
     name: 'Cielo',
     kind: 'sky',
-    paper: '#EEF4F8',
-    paper2: '#E2EDF4',
-    grid: 'rgba(196,216,231,0.55)',
+    paper: '#E4EFF7',
+    paper2: '#D6E7F2',
+    grid: 'rgba(170,200,220,0.55)',
     ink: '#202A34',
     inkSoft: '#52657A',
     accent: '#5B9BD5',
-    light: 'rgba(255,255,255,0.34)',
-    shade: 'rgba(60,90,120,0.05)'
+    light: 'rgba(255,255,255,0.42)',
+    shade: 'rgba(50,90,130,0.07)'
   },
   {
     id: 'space',
     name: 'Espacio',
     kind: 'space',
-    paper: '#0D1020',
-    paper2: '#141A31',
-    grid: 'rgba(160,180,230,0.16)',
+    paper: '#0B0E1C',
+    paper2: '#10152A',
+    grid: 'rgba(150,175,225,0.2)',
     ink: '#E8ECFF',
     inkSoft: '#A9B6D8',
     accent: '#7D5BA6',
-    light: 'rgba(120,150,255,0.11)',
-    shade: 'rgba(0,0,0,0.28)'
+    light: 'rgba(110,140,255,0.14)',
+    shade: 'rgba(0,0,0,0.34)'
   }
 ];
 

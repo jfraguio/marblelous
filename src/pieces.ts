@@ -384,39 +384,6 @@ const defs: PieceDef[] = [
     }
   },
   {
-    id: 'spike',
-    category: 'energy',
-    price: 0,
-    label: 'Pincho',
-    w: 70,
-    h: 100,
-    tintable: false,
-    defaultColor: 0,
-    build: (p) => {
-      const tip = tx(p, 0, 34);
-      return {
-        colliders: [],
-        triggers: [
-          {
-            kind: 'spike',
-            x: tip.x,
-            y: tip.y,
-            w: 0,
-            h: 0,
-            r: 26,
-            rot: p.rot,
-            power: 0,
-            pieceId: p.id,
-            disabledUntil: 0,
-            dx: 0,
-            dy: 0,
-            pairId: 0
-          }
-        ]
-      };
-    }
-  },
-  {
     id: 'booster',
     category: 'energy',
     price: 600,
@@ -521,36 +488,6 @@ const defs: PieceDef[] = [
           r: 0,
           rot: p.rot,
           power: 0,
-          pieceId: p.id,
-          disabledUntil: 0,
-          dx: 0,
-          dy: 0,
-          pairId: 0
-        }
-      ]
-    })
-  },
-  {
-    id: 'magnet',
-    category: 'energy',
-    price: 1400,
-    label: 'Imán',
-    w: 360,
-    h: 360,
-    tintable: false,
-    defaultColor: 1,
-    build: (p) => ({
-      colliders: [],
-      triggers: [
-        {
-          kind: 'magnet',
-          x: p.x,
-          y: p.y,
-          w: 0,
-          h: 0,
-          r: 180,
-          rot: 0,
-          power: 1000,
           pieceId: p.id,
           disabledUntil: 0,
           dx: 0,
@@ -682,39 +619,6 @@ const defs: PieceDef[] = [
     }
   },
   {
-    id: 'mill',
-    category: 'energy',
-    price: 0,
-    label: 'Molino',
-    w: 150,
-    h: 150,
-    tintable: false,
-    defaultColor: 0,
-    build: (p) => {
-      const side = dir(p, 1, 0);
-      return {
-        colliders: [],
-        triggers: [
-          {
-            kind: 'mill',
-            x: p.x,
-            y: p.y,
-            w: 240,
-            h: 150,
-            r: 0,
-            rot: p.rot,
-            power: 900,
-            pieceId: p.id,
-            disabledUntil: 0,
-            dx: side.x,
-            dy: side.y,
-            pairId: 0
-          }
-        ]
-      };
-    }
-  },
-  {
     id: 'xylo5',
     category: 'music',
     price: 650,
@@ -726,28 +630,6 @@ const defs: PieceDef[] = [
     build: (p) => {
       const c: Collider[] = [];
       const layout = xyloLayout(5);
-      for (let i = 0; i < layout.widths.length; i++) {
-        const w = layout.widths[i];
-        addCap(c, p, layout.xs[i] - w / 2 + 1, -4, layout.xs[i] + w / 2 - 1, -4, 7, 'chime', {
-          note: i,
-          chime: true
-        });
-      }
-      return { colliders: c, triggers: [] };
-    }
-  },
-  {
-    id: 'xylo8',
-    category: 'music',
-    price: 1100,
-    label: 'Xilófono de 8 notas',
-    w: 700,
-    h: 64,
-    tintable: false,
-    defaultColor: 0,
-    build: (p) => {
-      const c: Collider[] = [];
-      const layout = xyloLayout(8);
       for (let i = 0; i < layout.widths.length; i++) {
         const w = layout.widths[i];
         addCap(c, p, layout.xs[i] - w / 2 + 1, -4, layout.xs[i] + w / 2 - 1, -4, 7, 'chime', {
@@ -789,7 +671,6 @@ export function buildPiece(p: Piece): { colliders: Collider[]; triggers: Trigger
 export function pieceHitSize(p: Piece): { w: number; h: number } {
   const d = getPieceDef(p.defId);
   if (p.defId === 'ramp') return { w: p.len + 16, h: 28 };
-  if (p.defId === 'magnet') return { w: 120, h: 120 };
   return { w: d.w, h: d.h };
 }
 
@@ -826,16 +707,12 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'bubbleLift', category: 'energy', price: 0, label: 'Burbuja ascensora', kind: 'piece' },
   { id: 'portal', category: 'energy', price: 0, label: 'Portales', kind: 'piece' },
   { id: 'fan', category: 'energy', price: 0, label: 'Ventilador', kind: 'piece' },
-  { id: 'mill', category: 'energy', price: 0, label: 'Molino', kind: 'piece' },
   { id: 'xylo5', category: 'music', price: 650, label: 'Xilófono 5', kind: 'piece' },
-  { id: 'xylo8', category: 'music', price: 1100, label: 'Xilófono 8', kind: 'piece' },
   { id: 'booster', category: 'energy', price: 600, label: 'Propulsor', kind: 'piece' },
   { id: 'cannon', category: 'energy', price: 900, label: 'Cañón', kind: 'piece' },
   { id: 'bumper', category: 'energy', price: 800, label: 'Parachoques', kind: 'piece' },
-  { id: 'spike', category: 'energy', price: 0, label: 'Pincho', kind: 'piece' },
   { id: 'star', category: 'energy', price: 350, label: 'Estrella', kind: 'piece' },
   { id: 'goal', category: 'energy', price: 0, label: 'Campana', kind: 'piece' },
-  { id: 'magnet', category: 'energy', price: 1400, label: 'Imán', kind: 'piece' },
   { id: 'crystal', category: 'marbles', price: 0, label: 'Canica de cristal', kind: 'marble' },
   { id: 'rubber', category: 'marbles', price: 250, label: 'Canica de goma', kind: 'marble' },
   { id: 'steel', category: 'marbles', price: 600, label: 'Canica de acero', kind: 'marble' },

@@ -3,7 +3,6 @@ import type { Marble, Piece } from './types';
 import {
   drawBubbleSprite,
   drawMarbleSprite,
-  drawMillRotor,
   drawPiece,
   drawSoftShadow,
   getPieceShadow,
@@ -38,7 +37,6 @@ const SHADOW_OFF_X = -LIGHT_X * 13;
 const SHADOW_OFF_Y = -LIGHT_Y * 13;
 const ELLIPSE_SHADOW = new Set([
   'spiral',
-  'magnet',
   'portal',
   'fan',
   'booster',
@@ -276,124 +274,281 @@ export class Renderer {
     const oy = clamp(-cam.y * 0.03, -40, 40);
 
     if (kind === 'ocean') {
-      ctx.strokeStyle = 'rgba(46,158,151,0.075)';
-      ctx.lineWidth = 1.6;
-      ctx.lineCap = 'round';
-      for (let band = 0; band < 2; band++) {
-        const base = band === 0 ? h * 0.16 : h * 0.86;
-        for (let i = 0; i < 3; i++) {
-          ctx.beginPath();
-          for (let x = -20; x <= w + 20; x += 22) {
-            const y = base + i * 12 + Math.sin(x * 0.012 + now * 0.0009 + i * 1.7) * 5;
-            if (x === -20) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          }
-          ctx.stroke();
-        }
+      // Rayos de luz oblicuos.
+      ctx.fillStyle = `rgba(255,255,255,${0.03 + pulse * 0.015})`;
+      for (let i = 0; i < 4; i++) {
+        const x = w * (0.12 + i * 0.16) + ox;
+        ctx.beginPath();
+        ctx.moveTo(x, -20);
+        ctx.lineTo(x + 90, -20);
+        ctx.lineTo(x - 150, h + 20);
+        ctx.lineTo(x - 240, h + 20);
+        ctx.closePath();
+        ctx.fill();
       }
 
-      for (let i = 0; i < 14; i++) {
+      // Cáusticas por bandas.
+      ctx.strokeStyle = 'rgba(46,158,151,0.13)';
+      ctx.lineWidth = 1.7;
+      ctx.lineCap = 'round';
+      for (let band = 0; band < 6; band++) {
+        const base = band < 3 ? h * (0.1 + band * 0.055) : h * (0.82 + (band - 3) * 0.055);
+        ctx.beginPath();
+        for (let x = -20; x <= w + 20; x += 18) {
+          const y = base + Math.sin(x * 0.013 + now * 0.0011 + band * 1.7) * (4 + band * 0.7);
+          if (x === -20) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+
+      // Lecho y grava.
+      const sand = ctx.createLinearGradient(0, h * 0.88, 0, h);
+      sand.addColorStop(0, 'rgba(233,180,76,0)');
+      sand.addColorStop(1, 'rgba(233,180,76,0.09)');
+      ctx.fillStyle = sand;
+      ctx.fillRect(0, h * 0.88, w, h * 0.12);
+      ctx.fillStyle = 'rgba(46,158,151,0.12)';
+      for (let i = 0; i < 18; i++) {
+        const seed = hash2(i + 31, 5);
+        const x = ((seed % 1000) / 1000) * w + ox;
+        const y = h * 0.93 + ((seed >>> 8) % 30);
+        ctx.beginPath();
+        ctx.ellipse(x, y, 3 + ((seed >>> 12) % 5), 1.6, 0, 0, TAU);
+        ctx.fill();
+      }
+
+      // Burbujas.
+      for (let i = 0; i < 22; i++) {
         const seed = hash2(i + 1, 7);
         const x = ((seed % 1000) / 1000) * w + ox;
         const r = 2 + ((seed >>> 10) % 5);
         const baseY = ((seed >>> 4) % 1000) / 1000;
-        const y = ((baseY * h - now * 0.006 + i * 40) % (h + 80) + h + 80) % (h + 80) - 40;
-        ctx.fillStyle = 'rgba(255,255,255,0.13)';
+        const y = ((baseY * h - now * 0.007 + i * 40) % (h + 80) + h + 80) % (h + 80) - 40;
+        ctx.fillStyle = 'rgba(255,255,255,0.22)';
         ctx.beginPath();
         ctx.arc(x, y, r, 0, TAU);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(46,158,151,0.12)';
+        ctx.strokeStyle = 'rgba(46,158,151,0.2)';
         ctx.lineWidth = 1;
         ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.beginPath();
+        ctx.arc(x - r * 0.3, y - r * 0.35, Math.max(0.8, r * 0.22), 0, TAU);
+        ctx.fill();
       }
 
-      ctx.strokeStyle = 'rgba(46,158,151,0.06)';
-      ctx.lineWidth = 3;
-      for (let i = 0; i < 3; i++) {
-        const bx = w * 0.06 + i * 26 + ox * 0.6;
+      // Algas y peces.
+      ctx.strokeStyle = 'rgba(46,158,151,0.1)';
+      ctx.fillStyle = 'rgba(46,158,151,0.09)';
+      for (let i = 0; i < 7; i++) {
+        const bx = (i < 4 ? w * 0.04 + i * 28 : w * 0.92 - (i - 4) * 26) + ox * 0.6;
+        const hgt = 60 + (i % 3) * 34;
+        ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(bx, h + 10);
-        ctx.bezierCurveTo(bx - 14, h * 0.82, bx + 24, h * 0.72, bx + 4, h * 0.58);
+        ctx.bezierCurveTo(bx - 14, h - hgt * 0.4, bx + 20, h - hgt * 0.7, bx + 2, h - hgt);
         ctx.stroke();
+        for (let k = 1; k <= 3; k++) {
+          const t = k / 4;
+          const lx = bx + Math.sin(t * 3 + i) * 8;
+          const ly = h - hgt * t;
+          ctx.beginPath();
+          ctx.ellipse(lx + (k % 2 ? 8 : -8), ly, 7, 3, k % 2 ? 0.6 : -0.6, 0, TAU);
+          ctx.fill();
+        }
+      }
+      ctx.strokeStyle = 'rgba(46,158,151,0.13)';
+      ctx.fillStyle = 'rgba(46,158,151,0.12)';
+      for (let i = 0; i < 3; i++) {
+        const fx = w * (0.3 + i * 0.18) + ox + Math.sin(now * 0.0004 + i) * 20;
+        const fy = h * (0.62 + i * 0.07) + oy;
+        ctx.beginPath();
+        ctx.ellipse(fx, fy, 10, 4, 0, 0, TAU);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(fx - 10, fy);
+        ctx.lineTo(fx - 16, fy - 4);
+        ctx.lineTo(fx - 16, fy + 4);
+        ctx.closePath();
+        ctx.fill();
       }
       return;
     }
 
     if (kind === 'sky') {
-      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      const sun = ctx.createRadialGradient(w * 0.82 + ox, h * 0.16 + oy, 0, w * 0.82 + ox, h * 0.16 + oy, 190);
+      sun.addColorStop(0, 'rgba(255,255,255,0.32)');
+      sun.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = sun;
+      ctx.fillRect(0, 0, w, h);
+
       const clouds: [number, number, number][] = [
-        [0.18, 0.2, 1],
-        [0.72, 0.28, 0.85],
-        [0.46, 0.12, 0.7],
-        [0.86, 0.62, 0.6],
-        [0.12, 0.72, 0.5]
+        [0.16, 0.18, 1],
+        [0.68, 0.24, 0.9],
+        [0.42, 0.1, 0.65],
+        [0.88, 0.58, 0.7],
+        [0.1, 0.68, 0.55],
+        [0.55, 0.42, 0.45],
+        [0.32, 0.82, 0.5]
       ];
       for (let i = 0; i < clouds.length; i++) {
         const [cx, cy, sc] = clouds[i];
-        const drift = Math.sin(now * 0.00005 + i * 2.1) * 26;
+        const drift = Math.sin(now * 0.00006 + i * 2.1) * 30;
         const x = cx * w + ox * 0.7 + drift;
         const y = cy * h + oy * 0.5;
-        const rr = 52 * sc;
+        const rr = 58 * sc;
+        ctx.fillStyle = 'rgba(110,140,170,0.06)';
+        ctx.beginPath();
+        ctx.ellipse(x + 4, y + 10, rr * 1.55, rr * 0.45, 0, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.34)';
         ctx.beginPath();
         ctx.ellipse(x, y, rr * 1.5, rr * 0.5, 0, 0, TAU);
         ctx.ellipse(x - rr, y + rr * 0.15, rr * 0.8, rr * 0.38, 0, 0, TAU);
         ctx.ellipse(x + rr * 1.1, y + rr * 0.12, rr * 0.9, rr * 0.4, 0, 0, TAU);
+        ctx.ellipse(x + rr * 0.35, y - rr * 0.2, rr * 0.7, rr * 0.32, 0, 0, TAU);
         ctx.fill();
       }
 
-      ctx.strokeStyle = 'rgba(60,90,120,0.12)';
+      // Globo aerostático.
+      const bx = w * 0.18 + ox * 0.8;
+      const by = h * 0.38 + oy * 0.5 + Math.sin(now * 0.0004) * 6;
+      ctx.fillStyle = 'rgba(217,93,57,0.16)';
+      ctx.beginPath();
+      ctx.ellipse(bx, by, 26, 32, 0, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(233,180,76,0.24)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(bx, by - 31);
+      ctx.quadraticCurveTo(bx + 10, by, bx, by + 31);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(35,33,28,0.16)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(bx - 8, by + 28);
+      ctx.lineTo(bx - 6, by + 42);
+      ctx.lineTo(bx + 6, by + 42);
+      ctx.lineTo(bx + 8, by + 28);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(217,93,57,0.14)';
+      ctx.fillRect(bx - 6, by + 42, 12, 8);
+
+      ctx.strokeStyle = 'rgba(60,90,120,0.16)';
       ctx.lineWidth = 1.4;
       ctx.lineCap = 'round';
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 6; i++) {
         const seed = hash2(i + 3, 11);
         const x = ((seed % 1000) / 1000) * w * 0.7 + w * 0.2 + ox;
-        const y = h * 0.18 + ((seed >>> 8) % 100) + oy;
-        const flap = Math.sin(now * 0.002 + i) * 2.5;
+        const y = h * 0.16 + ((seed >>> 8) % 100) + oy;
+        const flap = Math.sin(now * 0.002 + i) * 2.8;
         ctx.beginPath();
-        ctx.moveTo(x - 7, y + flap);
-        ctx.quadraticCurveTo(x - 2, y - 3, x, y);
-        ctx.quadraticCurveTo(x + 2, y - 3, x + 7, y + flap);
+        ctx.moveTo(x - 8, y + flap);
+        ctx.quadraticCurveTo(x - 2, y - 4, x, y);
+        ctx.quadraticCurveTo(x + 2, y - 4, x + 8, y + flap);
         ctx.stroke();
       }
       return;
     }
 
     if (kind === 'space') {
-      const neb = ctx.createRadialGradient(w * 0.72 + ox * 0.4, h * 0.3 + oy * 0.4, 0, w * 0.72 + ox * 0.4, h * 0.3 + oy * 0.4, Math.max(w, h) * 0.6);
-      neb.addColorStop(0, 'rgba(125,91,166,0.1)');
-      neb.addColorStop(0.5, 'rgba(61,126,166,0.05)');
-      neb.addColorStop(1, 'rgba(13,16,32,0)');
+      const neb = ctx.createRadialGradient(w * 0.72 + ox * 0.4, h * 0.3 + oy * 0.4, 0, w * 0.72 + ox * 0.4, h * 0.3 + oy * 0.4, Math.max(w, h) * 0.62);
+      neb.addColorStop(0, 'rgba(125,91,166,0.16)');
+      neb.addColorStop(0.5, 'rgba(61,126,166,0.07)');
+      neb.addColorStop(1, 'rgba(11,14,28,0)');
       ctx.fillStyle = neb;
       ctx.fillRect(0, 0, w, h);
+      const neb2 = ctx.createRadialGradient(w * 0.25 + ox * 0.3, h * 0.72 + oy * 0.3, 0, w * 0.25 + ox * 0.3, h * 0.72 + oy * 0.3, Math.max(w, h) * 0.5);
+      neb2.addColorStop(0, 'rgba(46,158,151,0.08)');
+      neb2.addColorStop(1, 'rgba(11,14,28,0)');
+      ctx.fillStyle = neb2;
+      ctx.fillRect(0, 0, w, h);
 
-      const planet = ctx.createRadialGradient(w * 0.84 + ox, h * 0.2 + oy, 4, w * 0.84 + ox, h * 0.2 + oy, 74);
-      planet.addColorStop(0, 'rgba(125,91,166,0.14)');
-      planet.addColorStop(0.7, 'rgba(61,126,166,0.06)');
-      planet.addColorStop(1, 'rgba(13,16,32,0)');
+      const px = w * 0.84 + ox;
+      const py = h * 0.2 + oy;
+      const planet = ctx.createRadialGradient(px - 18, py - 22, 6, px, py, 82);
+      planet.addColorStop(0, 'rgba(180,150,230,0.3)');
+      planet.addColorStop(0.65, 'rgba(125,91,166,0.17)');
+      planet.addColorStop(1, 'rgba(61,126,166,0.03)');
       ctx.fillStyle = planet;
       ctx.beginPath();
-      ctx.arc(w * 0.84 + ox, h * 0.2 + oy, 74, 0, TAU);
+      ctx.arc(px, py, 78, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(180,150,230,0.14)';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.ellipse(px, py, 108, 26, -0.4, 0, TAU);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(220,230,255,0.08)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(px, py, 78, 20, -0.4, 0, TAU);
+      ctx.stroke();
+
+      const moon = ctx.createRadialGradient(w * 0.72 + ox, h * 0.32 + oy, 1, w * 0.72 + ox, h * 0.32 + oy, 12);
+      moon.addColorStop(0, 'rgba(220,230,255,0.3)');
+      moon.addColorStop(1, 'rgba(220,230,255,0)');
+      ctx.fillStyle = moon;
+      ctx.beginPath();
+      ctx.arc(w * 0.72 + ox, h * 0.32 + oy, 12, 0, TAU);
       ctx.fill();
 
-      for (let i = 0; i < 90; i++) {
+      for (let i = 0; i < 150; i++) {
         const seed = hash2(i + 1, 23);
         const x = ((seed % 1000) / 1000) * w;
         const y = (((seed >>> 9) % 1000) / 1000) * h;
-        const tw = 0.18 + 0.22 * (0.5 + 0.5 * Math.sin(now * 0.0012 + i * 1.7));
-        const size = (seed >>> 20) % 5 === 0 ? 2 : 1.2;
+        const tw = 0.18 + 0.3 * (0.5 + 0.5 * Math.sin(now * 0.0012 + i * 1.7));
+        const big = (seed >>> 20) % 11 === 0;
+        const size = big ? 2.4 : 1.2;
         ctx.fillStyle = `rgba(220,230,255,${tw})`;
         ctx.fillRect(x + ox * 0.3, y + oy * 0.3, size, size);
+        if (big) {
+          ctx.strokeStyle = `rgba(220,230,255,${tw * 0.5})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x - 5 + ox * 0.3, y + oy * 0.3);
+          ctx.lineTo(x + 7 + ox * 0.3, y + oy * 0.3);
+          ctx.moveTo(x + ox * 0.3, y - 5 + oy * 0.3);
+          ctx.lineTo(x + ox * 0.3, y + 7 + oy * 0.3);
+          ctx.stroke();
+        }
       }
+
+      // Cometa.
+      const cx = ((now * 0.006) % (w + 240)) - 120;
+      const cy = h * 0.58 + Math.sin(now * 0.0006) * 12;
+      ctx.strokeStyle = 'rgba(180,220,255,0.16)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx - 74, cy + 22);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(220,240,255,0.7)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2.2, 0, TAU);
+      ctx.fill();
       return;
     }
 
-    // Estudio: un polvo de papel casi invisible.
-    ctx.fillStyle = 'rgba(35,33,28,0.035)';
-    for (let i = 0; i < 18; i++) {
+    // Estudio: polvo y fibras de papel.
+    ctx.fillStyle = 'rgba(35,33,28,0.045)';
+    for (let i = 0; i < 30; i++) {
       const seed = hash2(i + 5, 3);
       const x = ((seed % 1000) / 1000) * w + Math.sin(now * 0.0002 + i) * 10;
       const y = (((seed >>> 8) % 1000) / 1000) * h + Math.cos(now * 0.00017 + i * 1.3) * 8;
       ctx.fillRect(x, y, 1.4, 1.4);
+    }
+    ctx.strokeStyle = 'rgba(35,33,28,0.025)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 9; i++) {
+      const seed = hash2(i + 41, 9);
+      const x = ((seed % 1000) / 1000) * w;
+      const y = (((seed >>> 8) % 1000) / 1000) * h;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 18 + (seed % 20), y + Math.sin(i) * 6);
+      ctx.stroke();
     }
     void pulse;
   }
@@ -401,7 +556,7 @@ export class Renderer {
   private drawPieceShadow(ctx: CanvasRenderingContext2D, p: Piece) {
     if (ELLIPSE_SHADOW.has(p.defId)) {
       const hs = pieceHitSize(p);
-      const wide = p.defId === 'magnet' ? 120 : hs.w * 0.62;
+      const wide = hs.w * 0.62;
       const tall = p.defId === 'fan' ? 150 : Math.max(16, hs.h * 0.5);
       drawSoftShadow(ctx, p.x + SHADOW_OFF_X * 0.8, p.y + SHADOW_OFF_Y * 0.9, wide, tall, 0.26);
       return;
@@ -517,8 +672,6 @@ export class Renderer {
       }
     }
 
-    if (def.id === 'mill') drawMillRotor(ctx, now * 0.0024);
-
     drawPiece(ctx, p);
 
     if (def.id === 'bubbleLift') {
@@ -555,17 +708,6 @@ export class Renderer {
       ctx.strokeStyle = rgba(PALETTE.teal, pulse);
       ctx.lineWidth = 2;
       ctx.strokeRect(-38, -38, 76, 76);
-    }
-
-    if (p.defId === 'magnet') {
-      const pulse = 0.06 + 0.035 * Math.sin(now * 0.0035);
-      ctx.strokeStyle = rgba(PALETTE.red, pulse);
-      ctx.lineWidth = 2;
-      for (let i = 0; i < 3; i++) {
-        ctx.beginPath();
-        ctx.arc(0, 0, 118 + i * 24 + Math.sin(now * 0.002 + i) * 3, 0, TAU);
-        ctx.stroke();
-      }
     }
 
     if (p.defId === 'star' && (!p.disabledUntil || p.disabledUntil < now)) {
@@ -631,8 +773,8 @@ export class Renderer {
       const age = now - p.flash;
       if (age >= 0 && age < 140) {
         const a = (1 - age / 140) * 0.75;
-        if (p.defId === 'xylo5' || p.defId === 'xylo8') {
-          const n = p.defId === 'xylo5' ? 5 : 8;
+        if (p.defId === 'xylo5') {
+          const n = 5;
           const layout = xyloLayout(n);
           const note = p.flashNote ?? -1;
           const idx = note >= 0 ? note : 0;

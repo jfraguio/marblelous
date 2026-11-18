@@ -597,11 +597,6 @@ export class Game {
     return m;
   }
 
-  clearMarbles() {
-    for (const m of this.marbles) m.alive = false;
-    this.spawnBurst(this.camera.x, this.camera.y, PALETTE.muted, 12, 0);
-    this.audio.ui();
-  }
 
   private cleanupMarbles() {
     for (const m of this.marbles) {

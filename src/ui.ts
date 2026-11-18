@@ -23,7 +23,6 @@ export class UI {
   combo = $('#combo');
   comboMult = $('#combo-mult');
   comboRing = $('.combo-ring');
-  btnClear = $('#btn-clear') as HTMLButtonElement;
   btnSound = $('#btn-sound');
   soundIcon = $('#sound-icon');
   selection = $('#selection-ui');
@@ -63,10 +62,6 @@ export class UI {
       this.game.recenter();
       this.game.audio.ui();
       this.game.saveCamera();
-    });
-    this.btnClear.addEventListener('click', () => {
-      this.game.clearMarbles();
-      this.toast('broom');
     });
     $('#btn-settings').addEventListener('click', () => this.openOverlay('settings'));
     this.btnSound.addEventListener('click', () => {
@@ -158,7 +153,6 @@ export class UI {
 
   refreshHud() {
     this.sparks.textContent = fmt(this.game.currency);
-    this.btnClear.disabled = this.game.marbles.length === 0;
     const cap = this.game.pieces.length;
     this.capacity.classList.toggle('is-hidden', cap < 1800);
     this.capacityNum.textContent = `${cap}`;
@@ -356,7 +350,7 @@ export class UI {
       <div class="set-value world-dots">${worldDots}<span class="world-now">${worldName}</span></div>
     </div>`);
     rows.push(this.buildRow('trash', 'Borrar canvas', '', 'clear', 'reset-row'));
-    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.6.0 · sin datos · sin red</span></div>`);
+    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.7.0 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
     this.settingsBody.querySelectorAll<HTMLElement>('.set-row.tap').forEach((row) => {

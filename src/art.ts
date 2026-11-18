@@ -159,7 +159,7 @@ function trimCache() {
 
 function colorFor(p: Piece): string {
   const d = getPieceDef(p.defId);
-  if (p.defId === 'xylo5' || p.defId === 'xylo8') return PALETTE.wood;
+  if (p.defId === 'xylo5') return PALETTE.wood;
   if (p.defId === 'trampoline') return PALETTE.green;
   if (p.defId === 'conveyor') return PALETTE.steel;
   if (p.defId === 'bumper') return PALETTE.red;
@@ -167,12 +167,9 @@ function colorFor(p: Piece): string {
   if (p.defId === 'cannon') return PALETTE.purple;
   if (p.defId === 'goal') return PALETTE.yellow;
   if (p.defId === 'star') return PALETTE.yellow;
-  if (p.defId === 'magnet') return PALETTE.red;
   if (p.defId === 'spiral') return PALETTE.teal;
   if (p.defId === 'bubble') return '#8FD3EE';
   if (p.defId === 'bubbleLift') return '#8FD3EE';
-  if (p.defId === 'mill') return PALETTE.steel;
-  if (p.defId === 'spike') return PALETTE.steel;
   if (p.defId === 'portal') return PALETTE.purple;
   if (p.defId === 'fan') return PALETTE.teal;
   if (d.tintable) return COLORS[p.color] ?? COLORS[d.defaultColor] ?? PALETTE.blue;
@@ -189,24 +186,17 @@ function spriteDims(p: Piece): { w: number; h: number } {
       return { w: HALF_PIPE_RADIUS * 2 + 18, h: HALF_PIPE_RADIUS * 2 + 18 };
     case 'funnel':
       return { w: 200, h: 170 };
-    case 'xylo5':
-    case 'xylo8': {
-      const n = p.defId === 'xylo5' ? 5 : 8;
+    case 'xylo5': {
+      const n = 5;
       const l = xyloLayout(n);
       return { w: l.total + 24, h: 62 };
     }
-    case 'magnet':
-      return { w: 360, h: 360 };
     case 'spiral':
       return { w: 300, h: 330 };
     case 'bubble':
       return { w: 228, h: 44 };
     case 'bubbleLift':
       return { w: 156, h: 196 };
-    case 'mill':
-      return { w: 170, h: 170 };
-    case 'spike':
-      return { w: 96, h: 126 };
     case 'portal':
       return { w: 260, h: 120 };
     case 'fan':
@@ -564,39 +554,6 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.arc(-44, 18, 5, 0, TAU);
       ctx.arc(44, 18, 5, 0, TAU);
       ctx.fill();
-    } else if (p.defId === 'magnet') {
-      ctx.strokeStyle = rgba(PALETTE.red, 0.12);
-      ctx.lineWidth = 2;
-      for (let i = 0; i < 3; i++) {
-        ctx.beginPath();
-        ctx.arc(0, 0, 165 - i * 26, 0, TAU);
-        ctx.stroke();
-      }
-      ctx.fillStyle = PALETTE.shadow;
-      ctx.beginPath();
-      ctx.arc(1, 4, 50, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = shade(PALETTE.red, -0.25);
-      ctx.beginPath();
-      ctx.arc(0, 0, 50, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = PALETTE.red;
-      ctx.beginPath();
-      ctx.arc(0, 0, 42, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = PALETTE.paper3;
-      ctx.beginPath();
-      ctx.arc(0, 0, 25, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = PALETTE.teal;
-      ctx.beginPath();
-      ctx.arc(0, 0, 20, 0, TAU);
-      ctx.fill();
-      ctx.strokeStyle = rgba('#ffffff', 0.55);
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(-9, -11, 22, Math.PI * 1.0, Math.PI * 1.55);
-      ctx.stroke();
     } else if (p.defId === 'spiral') {
       const N = 168;
       const pts: { x: number; y: number; d: number }[] = [];
@@ -858,82 +815,8 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.fillStyle = PALETTE.teal;
       rr(ctx, -44, 76, 88, 16, 8);
       ctx.fill();
-    } else if (p.defId === 'mill') {
-      ctx.fillStyle = PALETTE.shadow;
-      rr(ctx, -4, 18, 12, 62, 5);
-      ctx.fill();
-      ctx.fillStyle = shade(PALETTE.steel, -0.34);
-      rr(ctx, -6, 16, 12, 60, 6);
-      ctx.fill();
-      ctx.fillStyle = PALETTE.steel;
-      rr(ctx, -4, 16, 8, 56, 4);
-      ctx.fill();
-      ctx.fillStyle = shade(PALETTE.steel, -0.42);
-      rr(ctx, -34, 70, 68, 14, 7);
-      ctx.fill();
-      ctx.fillStyle = PALETTE.steel;
-      rr(ctx, -38, 74, 76, 12, 6);
-      ctx.fill();
-      ctx.fillStyle = shade(PALETTE.steel, -0.38);
-      ctx.beginPath();
-      ctx.arc(0, -10, 12, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = PALETTE.steel;
-      ctx.beginPath();
-      ctx.arc(0, -10, 8.5, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.55)';
-      ctx.beginPath();
-      ctx.arc(-3, -13, 3, 0, TAU);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(46,158,151,0.4)';
-      ctx.lineWidth = 2.4;
-      ctx.lineCap = 'round';
-      for (let i = -1; i <= 1; i++) {
-        ctx.beginPath();
-        ctx.moveTo(44, -10 + i * 12);
-        ctx.lineTo(62, -10 + i * 12);
-        ctx.stroke();
-      }
-    } else if (p.defId === 'spike') {
-      ctx.fillStyle = PALETTE.shadow;
-      rr(ctx, -24, -44, 48, 14, 7);
-      ctx.fill();
-      ctx.fillStyle = shade(PALETTE.wood, -0.25);
-      rr(ctx, -26, -50, 52, 14, 7);
-      ctx.fill();
-      ctx.fillStyle = PALETTE.wood;
-      rr(ctx, -24, -48, 48, 10, 5);
-      ctx.fill();
-      const metal = ctx.createLinearGradient(0, -30, 0, 38);
-      metal.addColorStop(0, '#E9EFF5');
-      metal.addColorStop(0.5, '#AEBAC6');
-      metal.addColorStop(1, '#5B6672');
-      ctx.fillStyle = metal;
-      ctx.beginPath();
-      ctx.moveTo(-16, -28);
-      ctx.lineTo(16, -28);
-      ctx.lineTo(0, 38);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = rgba(PALETTE.ink, 0.3);
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      ctx.fillStyle = PALETTE.red;
-      rr(ctx, -15, -25, 30, 6, 3);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(-8, -18);
-      ctx.lineTo(-1, 20);
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.beginPath();
-      ctx.arc(0, 35, 2.2, 0, TAU);
-      ctx.fill();
-    } else if (p.defId === 'xylo5' || p.defId === 'xylo8') {
-      const n = p.defId === 'xylo5' ? 5 : 8;
+    } else if (p.defId === 'xylo5') {
+      const n = 5;
       const layout = xyloLayout(n);
       ctx.fillStyle = PALETTE.shadow;
       rr(ctx, -layout.total / 2 - 9, 3, layout.total + 18, 30, 10);
@@ -1146,25 +1029,6 @@ export function drawMarbleSprite(
   ctx.globalAlpha = 1;
 }
 
-export function drawMillRotor(ctx: CanvasRenderingContext2D, angle: number) {
-  ctx.save();
-  ctx.translate(0, -10);
-  ctx.rotate(angle);
-  for (let i = 0; i < 4; i++) {
-    ctx.rotate(Math.PI / 2);
-    ctx.fillStyle = i % 2 ? '#B9C6D1' : '#D8E2EA';
-    rr(ctx, 8, -8, 52, 16, 8);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(35,33,28,0.2)';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    rr(ctx, 12, -5, 38, 3, 1.5);
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
 let bubbleSprite: Sprite | null = null;
 
 export function getBubbleSprite(): Sprite {
@@ -1262,13 +1126,6 @@ export function drawPreview(canvas: HTMLCanvasElement, itemId: string, kind: 'pi
   const scale = itemId.startsWith('xylo') || itemId === 'bubble' || itemId === 'conveyor'
     ? Math.min((ch - 14) / s.h, 2.2)
     : Math.min((cw - 16) / s.w, (ch - 14) / s.h, 2.2);
-  if (itemId === 'mill') {
-    ctx.save();
-    ctx.translate(cw / 2, ch / 2);
-    ctx.scale(scale, scale);
-    drawMillRotor(ctx, 0.8);
-    ctx.restore();
-  }
   ctx.drawImage(s.canvas, cw / 2 - (s.w * scale) / 2, ch / 2 - (s.h * scale) / 2, s.w * scale, s.h * scale);
 }
 

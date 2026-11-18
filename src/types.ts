@@ -57,7 +57,7 @@ export interface Collider {
   uy: number;
 }
 
-export type TriggerKind = 'goal' | 'star' | 'boost' | 'magnet' | 'portal' | 'fan' | 'spiral' | 'bubbleLift' | 'mill' | 'spike';
+export type TriggerKind = 'goal' | 'star' | 'boost' | 'portal' | 'fan' | 'spiral' | 'bubbleLift';
 
 export interface Trigger {
   kind: TriggerKind;
@@ -70,7 +70,7 @@ export interface Trigger {
   power: number;
   pieceId: number;
   disabledUntil: number;
-  /** boost/magnet direction in world space */
+  /** boost/fan direction in world space */
   dx: number;
   dy: number;
   pairId: number;
@@ -129,6 +129,7 @@ export interface Marble {
   rideDepth: number;
   bubbled: boolean;
   bubbleT: number;
+  bubbleReadyAt: number;
 }
 
 export interface PieceDef {
