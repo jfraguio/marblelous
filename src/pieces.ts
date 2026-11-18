@@ -56,7 +56,7 @@ export const MARBLE_TYPES: MarbleType[] = [
     id: 'crystal',
     label: 'Canica de cristal',
     price: 0,
-    r: 9,
+    r: 27,
     density: 1,
     e: 0.45,
     mu: 0.18,
@@ -68,7 +68,7 @@ export const MARBLE_TYPES: MarbleType[] = [
     id: 'rubber',
     label: 'Canica de goma',
     price: 250,
-    r: 9.5,
+    r: 28.5,
     density: 0.85,
     e: 0.82,
     mu: 0.35,
@@ -80,7 +80,7 @@ export const MARBLE_TYPES: MarbleType[] = [
     id: 'steel',
     label: 'Canica de acero',
     price: 600,
-    r: 8.5,
+    r: 25.5,
     density: 2.6,
     e: 0.25,
     mu: 0.08,
@@ -92,7 +92,7 @@ export const MARBLE_TYPES: MarbleType[] = [
     id: 'comet',
     label: 'Canica cometa',
     price: 1500,
-    r: 9,
+    r: 27,
     density: 1,
     e: 0.4,
     mu: 0.15,
@@ -106,7 +106,7 @@ export const MARBLE_TYPES: MarbleType[] = [
     id: 'plasma',
     label: 'Canica plasma',
     price: 2500,
-    r: 9,
+    r: 27,
     density: 0.9,
     e: 0.5,
     mu: 0.12,
@@ -274,7 +274,7 @@ const defs: PieceDef[] = [
     category: 'build',
     price: 0,
     label: 'Rampa',
-    w: 160,
+    w: 320,
     h: 20,
     tintable: true,
     defaultColor: 1,
@@ -304,13 +304,13 @@ const defs: PieceDef[] = [
     category: 'build',
     price: 300,
     label: 'Trampolín',
-    w: 120,
+    w: 240,
     h: 24,
     tintable: false,
     defaultColor: 3,
     build: (p) => {
       const c: Collider[] = [];
-      addCap(c, p, -52, 0, 52, 0, 6, 'rubber');
+      addCap(c, p, -104, 0, 104, 0, 6, 'rubber');
       return { colliders: c, triggers: [] };
     }
   },
@@ -355,13 +355,13 @@ const defs: PieceDef[] = [
     category: 'build',
     price: 850,
     label: 'Cinta transportadora',
-    w: 180,
+    w: 360,
     h: 24,
     tintable: false,
     defaultColor: 0,
     build: (p) => {
       const c: Collider[] = [];
-      addCap(c, p, -72, 0, 72, 0, 6, 'conveyor', {
+      addCap(c, p, -144, 0, 144, 0, 6, 'conveyor', {
         conveyor: 220,
         tangent: { x: 1, y: 0 }
       });
@@ -676,7 +676,7 @@ export function makePiece(id: number, defId: string, x: number, y: number, rot =
     x,
     y,
     rot,
-    len: len ?? (defId === 'ramp' ? 160 : 0),
+    len: len ?? (defId === 'ramp' ? 320 : 0),
     color: def.defaultColor,
     variant: 0,
     bornAt: performance.now()

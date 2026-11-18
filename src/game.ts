@@ -1127,7 +1127,7 @@ export class Game {
           x: Number(raw.x) || 0,
           y: Number(raw.y) || 0,
           rot: Number(raw.rot) || 0,
-          len: Number(raw.len) || (raw.defId === 'ramp' ? 160 : 0),
+          len: Number(raw.len) || (raw.defId === 'ramp' ? 320 : 0),
           color: Number.isFinite(raw.color) ? raw.color : getPieceDef(raw.defId).defaultColor,
           variant: Number(raw.variant) || 0
         };

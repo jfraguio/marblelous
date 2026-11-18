@@ -213,9 +213,9 @@ function spriteDims(p: Piece): { w: number; h: number } {
     case 'cannon':
       return { w: 104, h: 70 };
     case 'conveyor':
-      return { w: 168, h: 28 };
+      return { w: 336, h: 28 };
     case 'trampoline':
-      return { w: 128, h: 28 };
+      return { w: 248, h: 28 };
     default:
       return { w: getPieceDef(p.defId).w, h: getPieceDef(p.defId).h };
   }
@@ -382,39 +382,39 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.stroke();
     } else if (p.defId === 'trampoline') {
       ctx.fillStyle = PALETTE.shadow;
-      rr(ctx, -60, -6 + 4, 120, 16, 8);
+      rr(ctx, -120, -6 + 4, 240, 16, 8);
       ctx.fill();
       ctx.fillStyle = shade(PALETTE.green, -0.25);
-      rr(ctx, -62, -8, 124, 18, 9);
+      rr(ctx, -124, -8, 248, 18, 9);
       ctx.fill();
       ctx.fillStyle = '#7BC98F';
-      rr(ctx, -56, -5, 112, 12, 6);
+      rr(ctx, -112, -5, 224, 12, 6);
       ctx.fill();
       ctx.strokeStyle = rgba('#ffffff', 0.55);
       ctx.lineWidth = 2;
-      for (let i = -1; i <= 1; i++) {
+      for (let i = -2; i <= 2; i++) {
         ctx.beginPath();
-        ctx.moveTo(i * 30, -3);
-        ctx.lineTo(i * 30, 3);
+        ctx.moveTo(i * 44, -3);
+        ctx.lineTo(i * 44, 3);
         ctx.stroke();
       }
       ctx.strokeStyle = rgba(PALETTE.ink, 0.14);
       ctx.lineWidth = 1.4;
-      rr(ctx, -62, -8, 124, 18, 9);
+      rr(ctx, -124, -8, 248, 18, 9);
       ctx.stroke();
     } else if (p.defId === 'conveyor') {
       ctx.fillStyle = PALETTE.shadow;
-      rr(ctx, -78, -8 + 4, 156, 20, 7);
+      rr(ctx, -156, -8 + 4, 312, 20, 7);
       ctx.fill();
       ctx.fillStyle = shade(PALETTE.steel, -0.3);
-      rr(ctx, -80, -11, 160, 22, 8);
+      rr(ctx, -160, -11, 320, 22, 8);
       ctx.fill();
       ctx.fillStyle = '#59636D';
-      rr(ctx, -74, -6, 148, 12, 4);
+      rr(ctx, -148, -6, 296, 12, 4);
       ctx.fill();
       ctx.strokeStyle = rgba('#ffffff', 0.18);
       ctx.lineWidth = 1.4;
-      rr(ctx, -80, -11, 160, 22, 8);
+      rr(ctx, -160, -11, 320, 22, 8);
       ctx.stroke();
     } else if (p.defId === 'bumper') {
       ctx.fillStyle = PALETTE.shadow;
@@ -1027,7 +1027,7 @@ export function drawPreview(canvas: HTMLCanvasElement, itemId: string, kind: 'pi
     x: 0,
     y: 0,
     rot: 0,
-    len: 160,
+    len: 320,
     color: getPieceDef(itemId).defaultColor,
     variant: 0
   };

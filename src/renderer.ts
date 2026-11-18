@@ -377,11 +377,12 @@ export class Renderer {
 
     if (p.defId === 'conveyor') {
       const offset = (now * 0.07) % 54;
+      const span = 320;
       ctx.strokeStyle = 'rgba(255,253,248,0.38)';
       ctx.lineWidth = 3;
       ctx.lineCap = 'round';
-      for (let i = -2; i <= 2; i++) {
-        const x = -80 + ((i * 54 + offset) % 160);
+      for (let i = 0; i < 6; i++) {
+        const x = -160 + ((offset + i * 54) % span);
         ctx.beginPath();
         ctx.moveTo(x - 6, -4);
         ctx.lineTo(x, 1);
