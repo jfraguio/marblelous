@@ -257,6 +257,7 @@ export class UI {
         card.className = `card marble-card${this.game.selectedMarble === type.id ? ' is-active' : ''}`;
         card.dataset.id = type.id;
         card.dataset.kind = 'marble';
+        card.title = type.label;
         card.setAttribute('aria-label', type.label);
         const canvas = document.createElement('canvas');
         card.appendChild(canvas);
@@ -270,7 +271,9 @@ export class UI {
         card.className = `card${this.game.armedDefId === item.id ? ' is-active' : ''}`;
         card.dataset.id = item.id;
         card.dataset.kind = 'piece';
-        card.setAttribute('aria-label', item.label);
+        const name = getPieceDef(item.id).label;
+        card.title = name;
+        card.setAttribute('aria-label', name);
         const canvas = document.createElement('canvas');
         card.appendChild(canvas);
         this.tray.appendChild(card);
