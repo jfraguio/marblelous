@@ -162,7 +162,8 @@ export interface PhysEvent {
     | 'bubble'
     | 'pop'
     | 'air'
-    | 'marble';
+    | 'marble'
+    | 'rainbow';
   x: number;
   y: number;
   pieceId: number;

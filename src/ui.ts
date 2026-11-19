@@ -95,10 +95,19 @@ export class UI {
     this.selSize.addEventListener('click', (e) => {
       e.stopPropagation();
       const p = this.game.selectedPiece;
-      if (!p || p.defId !== 'ramp') return;
-      let next = p.len * 2;
-      if (next > 1920) next = 80;
-      this.game.setPieceLen(p, next, true, p.len);
+      if (!p) return;
+      if (p.defId === 'ramp') {
+        let next = p.len * 2;
+        if (next > 1920) next = 80;
+        this.game.setPieceLen(p, next, true, p.len);
+      } else if (p.defId === 'portal') {
+        const values = [124, 180, 240, 300, 360];
+        const i = values.findIndex((v) => v > p.len + 1);
+        const next = i < 0 ? values[0] : values[i];
+        this.game.setPieceLen(p, next, true, p.len);
+      } else {
+        return;
+      }
       this.game.audio.ui();
       this.updateSelection();
     });
@@ -243,8 +252,9 @@ export class UI {
     }
     this.selection.classList.remove('is-hidden');
     const isRamp = p.defId === 'ramp';
-    this.selSize.classList.toggle('is-hidden', !isRamp);
-    const count = 3 + (isRamp ? 1 : 0);
+    const canSize = isRamp || p.defId === 'portal';
+    this.selSize.classList.toggle('is-hidden', !canSize);
+    const count = 3 + (canSize ? 1 : 0);
     const width = count * 52 + (count - 1) * 8;
     this.selection.style.left = `${clamp(top.x - width / 2, 8, this.game.viewW - width - 8)}px`;
     this.selection.style.top = `${clamp(top.y - 26, 64, this.game.viewH - 150)}px`;
@@ -350,7 +360,7 @@ export class UI {
       <div class="set-value world-dots">${worldDots}<span class="world-now">${worldName}</span></div>
     </div>`);
     rows.push(this.buildRow('trash', 'Borrar canvas', '', 'clear', 'reset-row'));
-    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.7.0 · sin datos · sin red</span></div>`);
+    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.8.0 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
     this.settingsBody.querySelectorAll<HTMLElement>('.set-row.tap').forEach((row) => {

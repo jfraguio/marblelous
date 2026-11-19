@@ -3,7 +3,6 @@ import {
   COLORS,
   FUNNEL_LEFT,
   FUNNEL_RIGHT,
-  HALF_PIPE_RADIUS,
   MARBLE_TYPES,
   NOTE_COLORS,
   PALETTE,
@@ -13,6 +12,7 @@ import {
   SPIRAL_ENTRY,
   spiralDepth,
   spiralLocal,
+  defaultLen,
   getPieceDef,
   xyloLayout
 } from './pieces';
@@ -182,10 +182,8 @@ function spriteDims(p: Piece): { w: number; h: number } {
       return { w: p.len + 16, h: 26 };
     case 'rampCurve':
       return { w: RAMP_CURVE_RADIUS * 2 + 18, h: RAMP_CURVE_RADIUS * 2 + 18 };
-    case 'halfPipe':
-      return { w: HALF_PIPE_RADIUS * 2 + 18, h: HALF_PIPE_RADIUS * 2 + 18 };
     case 'funnel':
-      return { w: 200, h: 170 };
+      return { w: 220, h: 200 };
     case 'xylo5': {
       const n = 5;
       const l = xyloLayout(n);
@@ -194,11 +192,11 @@ function spriteDims(p: Piece): { w: number; h: number } {
     case 'spiral':
       return { w: 300, h: 330 };
     case 'bubble':
-      return { w: 228, h: 44 };
+      return { w: 250, h: 40 };
     case 'bubbleLift':
       return { w: 156, h: 196 };
     case 'portal':
-      return { w: 260, h: 120 };
+      return { w: p.len + 84, h: 120 };
     case 'fan':
       return { w: 124, h: 232 };
     case 'goal':
@@ -296,9 +294,9 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
 
     if (p.defId === 'ramp') {
       const L = p.len;
+      ctx.lineCap = 'butt';
       ctx.strokeStyle = PALETTE.shadow;
       ctx.lineWidth = 12;
-      ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(-L / 2 + 2, 4);
       ctx.lineTo(L / 2 + 2, 4);
@@ -315,9 +313,17 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.strokeStyle = light;
       ctx.lineWidth = 2.4;
       ctx.beginPath();
-      ctx.moveTo(-L / 2 + 3, -3.5);
-      ctx.lineTo(L / 2 - 3, -3.5);
+      ctx.moveTo(-L / 2, -3.5);
+      ctx.lineTo(L / 2, -3.5);
       ctx.stroke();
+      ctx.strokeStyle = rgba(PALETTE.ink, 0.28);
+      ctx.lineWidth = 1.2;
+      for (const ex of [-L / 2 + 0.8, L / 2 - 0.8]) {
+        ctx.beginPath();
+        ctx.moveTo(ex, -7.5);
+        ctx.lineTo(ex, 7.5);
+        ctx.stroke();
+      }
     } else if (p.defId === 'rampCurve') {
       const track = (r: number, lw: number, col: string) => {
         ctx.beginPath();
@@ -334,52 +340,77 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       track(RAMP_CURVE_RADIUS, 16, dark);
       track(RAMP_CURVE_RADIUS, 12, c);
       track(RAMP_CURVE_RADIUS - 4.2, 2.1, rgba('#ffffff', 0.35));
-    } else if (p.defId === 'halfPipe') {
-      const track = (r: number, lw: number, col: string) => {
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI);
-        ctx.strokeStyle = col;
-        ctx.lineWidth = lw;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-      };
-      ctx.save();
-      ctx.translate(1.5, 3);
-      track(HALF_PIPE_RADIUS, 13, PALETTE.shadow);
-      ctx.restore();
-      track(HALF_PIPE_RADIUS, 16, dark);
-      track(HALF_PIPE_RADIUS, 12, c);
-      track(HALF_PIPE_RADIUS + 4.2, 2.0, rgba('#ffffff', 0.3));
     } else if (p.defId === 'funnel') {
-      const drawCurve = (pts: { x: number; y: number }[], col: string, off = 0) => {
+      const L = FUNNEL_LEFT;
+      const R = FUNNEL_RIGHT;
+      // cuerpo del embudo
+      ctx.beginPath();
+      ctx.moveTo(L[0].x, L[0].y);
+      for (let i = 1; i < L.length; i++) ctx.lineTo(L[i].x, L[i].y);
+      for (let i = R.length - 1; i >= 0; i--) ctx.lineTo(R[i].x, R[i].y);
+      ctx.closePath();
+      const body = ctx.createLinearGradient(0, -80, 0, 84);
+      body.addColorStop(0, rgba(c, 0.14));
+      body.addColorStop(0.55, rgba(c, 0.26));
+      body.addColorStop(1, rgba(c, 0.1));
+      ctx.fillStyle = body;
+      ctx.fill();
+
+      const drawCurve = (pts: { x: number; y: number }[], col: string, lw: number, off = 0) => {
         ctx.beginPath();
         ctx.moveTo(pts[0].x + off, pts[0].y + off);
         for (const pt of pts.slice(1)) ctx.lineTo(pt.x + off, pt.y + off);
         ctx.strokeStyle = col;
-        ctx.lineWidth = 13;
+        ctx.lineWidth = lw;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
         ctx.stroke();
       };
       ctx.save();
       ctx.translate(1.5, 3);
-      drawCurve(FUNNEL_LEFT, PALETTE.shadow);
-      drawCurve(FUNNEL_RIGHT, PALETTE.shadow);
+      drawCurve(L, PALETTE.shadow, 13);
+      drawCurve(R, PALETTE.shadow, 13);
       ctx.restore();
-      drawCurve(FUNNEL_LEFT, dark);
-      drawCurve(FUNNEL_RIGHT, dark);
-      ctx.lineWidth = 9;
-      drawCurve(FUNNEL_LEFT, c);
-      drawCurve(FUNNEL_RIGHT, c);
-      ctx.strokeStyle = rgba('#ffffff', 0.3);
-      ctx.lineWidth = 1.8;
+      drawCurve(L, dark, 13);
+      drawCurve(R, dark, 13);
+      drawCurve(L, c, 9);
+      drawCurve(R, c, 9);
+
+      // boca superior
+      ctx.fillStyle = 'rgba(35,33,28,0.14)';
       ctx.beginPath();
-      ctx.moveTo(FUNNEL_LEFT[1].x - 2, FUNNEL_LEFT[1].y);
-      ctx.lineTo(FUNNEL_LEFT[FUNNEL_LEFT.length - 2].x - 2, FUNNEL_LEFT[FUNNEL_LEFT.length - 2].y);
-      ctx.moveTo(FUNNEL_RIGHT[1].x + 2, FUNNEL_RIGHT[1].y);
-      ctx.lineTo(FUNNEL_RIGHT[FUNNEL_RIGHT.length - 2].x + 2, FUNNEL_RIGHT[FUNNEL_RIGHT.length - 2].y);
+      ctx.ellipse(0, -80, 96, 12, 0, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = rgba(c, 0.32);
+      ctx.beginPath();
+      ctx.ellipse(0, -80, 92, 9, 0, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = dark;
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.ellipse(0, -80, 96, 12, 0, 0, TAU);
       ctx.stroke();
-    } else if (p.defId === 'trampoline') {
+
+      // cuello / salida
+      ctx.fillStyle = 'rgba(35,33,28,0.2)';
+      ctx.beginPath();
+      ctx.ellipse(0, 84, 38, 7, 0, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = shade(c, -0.25);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(0, 82, 40, 9, 0, 0, TAU);
+      ctx.stroke();
+
+      ctx.strokeStyle = rgba('#ffffff', 0.35);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(L[2].x - 2, L[2].y);
+      ctx.lineTo(L[L.length - 2].x - 2, L[L.length - 2].y);
+      ctx.moveTo(R[2].x + 2, R[2].y);
+      ctx.lineTo(R[R.length - 2].x + 2, R[R.length - 2].y);
+      ctx.stroke();
+    } else if (p.defId === 'trampoline') {    } else if (p.defId === 'trampoline') {
       ctx.fillStyle = PALETTE.shadow;
       rr(ctx, -120, -6 + 4, 240, 16, 8);
       ctx.fill();
@@ -654,34 +685,114 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.fill();
     } else if (p.defId === 'bubble') {
       ctx.save();
-      ctx.fillStyle = PALETTE.shadow;
-      rr(ctx, -94, -4, 192, 26, 13);
+      ctx.fillStyle = 'rgba(35,33,28,0.1)';
+      rr(ctx, -112, 5, 224, 12, 6);
       ctx.fill();
-      ctx.fillStyle = 'rgba(143,211,238,0.78)';
-      rr(ctx, -96, -8, 192, 24, 12);
+
+      const ice = ctx.createLinearGradient(0, -11, 0, 11);
+      ice.addColorStop(0, 'rgba(242,252,255,0.62)');
+      ice.addColorStop(0.4, 'rgba(178,232,255,0.42)');
+      ice.addColorStop(1, 'rgba(92,172,220,0.34)');
+      ctx.fillStyle = ice;
+      ctx.beginPath();
+      ctx.moveTo(-112, -6);
+      ctx.lineTo(-86, -9);
+      ctx.lineTo(-52, -7);
+      ctx.lineTo(-18, -10);
+      ctx.lineTo(16, -7);
+      ctx.lineTo(54, -9);
+      ctx.lineTo(84, -6);
+      ctx.lineTo(112, -8);
+      ctx.lineTo(114, 6);
+      ctx.lineTo(82, 4);
+      ctx.lineTo(44, 8);
+      ctx.lineTo(10, 5);
+      ctx.lineTo(-24, 8);
+      ctx.lineTo(-60, 5);
+      ctx.lineTo(-94, 8);
+      ctx.lineTo(-114, 5);
+      ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = '#2E9E97';
-      ctx.lineWidth = 2.8;
-      rr(ctx, -96, -8, 192, 24, 12);
+
+      // facetas
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.beginPath();
+      ctx.moveTo(-112, -6);
+      ctx.lineTo(-86, -9);
+      ctx.lineTo(-52, -7);
+      ctx.lineTo(-70, -1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.16)';
+      ctx.beginPath();
+      ctx.moveTo(16, -7);
+      ctx.lineTo(54, -9);
+      ctx.lineTo(84, -6);
+      ctx.lineTo(62, 0);
+      ctx.closePath();
+      ctx.fill();
+
+      // aristas
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-108, -5.5);
+      ctx.lineTo(-86, -8);
+      ctx.lineTo(-52, -6);
+      ctx.lineTo(-18, -9);
+      ctx.lineTo(16, -6);
+      ctx.lineTo(54, -8);
+      ctx.lineTo(84, -5);
+      ctx.lineTo(108, -7);
       ctx.stroke();
-      for (let i = -4; i <= 4; i++) {
-        const x = i * 20;
-        const y = -10 - (i % 2 === 0 ? 4 : 0);
-        ctx.fillStyle = 'rgba(255,253,248,0.72)';
+      ctx.strokeStyle = 'rgba(42,100,145,0.38)';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(-110, 5);
+      ctx.lineTo(-60, 4);
+      ctx.lineTo(-24, 7);
+      ctx.lineTo(10, 4);
+      ctx.lineTo(44, 7);
+      ctx.lineTo(82, 3);
+      ctx.lineTo(112, 5);
+      ctx.stroke();
+
+      // grietas de hielo
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-76, -4);
+      ctx.lineTo(-60, 3);
+      ctx.lineTo(-42, -2);
+      ctx.moveTo(-8, -6);
+      ctx.lineTo(3, 2);
+      ctx.lineTo(19, -3);
+      ctx.moveTo(47, -5);
+      ctx.lineTo(58, 4);
+      ctx.lineTo(76, -1);
+      ctx.moveTo(22, -1);
+      ctx.lineTo(26, 6);
+      ctx.moveTo(-56, 4);
+      ctx.lineTo(-50, -3);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(120,200,235,0.5)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(-62, -7);
+      ctx.lineTo(-48, -2);
+      ctx.moveTo(58, -8);
+      ctx.lineTo(66, -2);
+      ctx.stroke();
+
+      // escarcha
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      for (let i = 0; i < 9; i++) {
+        const x = -100 + i * 25;
+        const y = (i % 2 === 0 ? -4 : 4) + (i % 3);
         ctx.beginPath();
-        ctx.arc(x, y + 8, 11.5, 0, TAU);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(46,158,151,0.95)';
-        ctx.lineWidth = 1.9;
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(255,255,255,0.9)';
-        ctx.beginPath();
-        ctx.arc(x - 3, y + 4, 3.2, 0, TAU);
+        ctx.arc(x, y, 0.9 + (i % 2), 0, TAU);
         ctx.fill();
       }
-      ctx.fillStyle = 'rgba(46,158,151,0.55)';
-      rr(ctx, -88, 9, 176, 3, 1.5);
-      ctx.fill();
       ctx.restore();
     } else if (p.defId === 'bubbleLift') {
       ctx.fillStyle = PALETTE.shadow;
@@ -698,8 +809,22 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       rr(ctx, -38, 50, 76, 18, 9);
       ctx.stroke();
 
+      // collarines laterales para acoplar rampas
+      for (const side of [-1, 1]) {
+        ctx.fillStyle = shade(PALETTE.teal, -0.38);
+        rr(ctx, side * 48 - 8, -8, 16, 16, 5);
+        ctx.fill();
+        ctx.fillStyle = shade(PALETTE.teal, -0.12);
+        rr(ctx, side * 48 - 5, -5, 10, 10, 3);
+        ctx.fill();
+        ctx.strokeStyle = rgba('#ffffff', 0.5);
+        ctx.lineWidth = 1.2;
+        rr(ctx, side * 48 - 5, -5, 10, 10, 3);
+        ctx.stroke();
+      }
+
       ctx.save();
-      ctx.translate(0, -8);
+      ctx.translate(0, 0);
       ctx.strokeStyle = shade(PALETTE.teal, -0.28);
       ctx.lineWidth = 10;
       ctx.beginPath();
@@ -780,14 +905,16 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
         ctx.stroke();
         ctx.restore();
       };
-      ring(-62, PALETTE.purple);
-      ring(62, PALETTE.teal);
+      const half = p.len > 0 ? p.len / 2 : 62;
+      ring(-half, PALETTE.purple);
+      ring(half, PALETTE.teal);
+      const inner = Math.max(8, half - 33);
       ctx.strokeStyle = 'rgba(35,33,28,0.18)';
       ctx.lineWidth = 2;
       ctx.setLineDash([5, 6]);
       ctx.beginPath();
-      ctx.moveTo(-33, 0);
-      ctx.quadraticCurveTo(0, -25, 33, 0);
+      ctx.moveTo(-inner, 0);
+      ctx.quadraticCurveTo(0, -Math.min(25, inner * 0.8), inner, 0);
       ctx.stroke();
       ctx.setLineDash([]);
     } else if (p.defId === 'fan') {
@@ -889,6 +1016,7 @@ export function getMarbleSprite(type: MarbleType): Sprite {
   if (hit) return hit;
   const metal = type.id === 'steel';
   const rubber = type.id === 'rubber';
+  const rainbow = type.id === 'rainbow';
   const s = makeSprite(34, 34, (ctx) => {
     const r = 17;
 
@@ -922,7 +1050,31 @@ export function getMarbleSprite(type: MarbleType): Sprite {
     ctx.arc(0, 0, r - 0.4, 0, TAU);
     ctx.clip();
 
-    if (metal) {
+    if (rainbow) {
+      const bands = ctx.createLinearGradient(-r, -r, r, r);
+      bands.addColorStop(0, '#E85D5D');
+      bands.addColorStop(0.18, '#E9B44C');
+      bands.addColorStop(0.36, '#7BC98F');
+      bands.addColorStop(0.54, '#5FD3D0');
+      bands.addColorStop(0.72, '#5B9BD5');
+      bands.addColorStop(0.88, '#B45AE8');
+      bands.addColorStop(1, '#D26D8C');
+      ctx.globalAlpha = 0.78;
+      ctx.fillStyle = bands;
+      ctx.fillRect(-r, -r, r * 2, r * 2);
+      ctx.globalAlpha = 1;
+      const sheen = ctx.createRadialGradient(-6, -7, 1, 0, 1.5, r);
+      sheen.addColorStop(0, 'rgba(255,255,255,0.8)');
+      sheen.addColorStop(0.4, 'rgba(255,255,255,0.16)');
+      sheen.addColorStop(0.85, 'rgba(255,255,255,0)');
+      sheen.addColorStop(1, 'rgba(20,20,40,0.16)');
+      ctx.fillStyle = sheen;
+      ctx.fillRect(-r, -r, r * 2, r * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.beginPath();
+      ctx.arc(-1.5, 1.5, r * 0.5, 0, TAU);
+      ctx.fill();
+    } else if (metal) {
       // Reflejo de estudio: banda de horizonte y destello alargado.
       const band = ctx.createLinearGradient(0, -r, 0, r);
       band.addColorStop(0.3, 'rgba(255,255,255,0)');
@@ -1116,14 +1268,14 @@ export function drawPreview(canvas: HTMLCanvasElement, itemId: string, kind: 'pi
     x: 0,
     y: 0,
     rot: 0,
-    len: 320,
+    len: defaultLen(itemId),
     color: getPieceDef(itemId).defaultColor,
     variant: 0
   };
   const s = getPieceSprite(p);
   // Las piezas muy anchas (xilófonos) se recortan por los lados para que sus
   // láminas se lean; el resto se muestra completo.
-  const scale = itemId.startsWith('xylo') || itemId === 'bubble' || itemId === 'conveyor'
+  const scale = itemId.startsWith('xylo') || itemId === 'conveyor'
     ? Math.min((ch - 14) / s.h, 2.2)
     : Math.min((cw - 16) / s.w, (ch - 14) / s.h, 2.2);
   ctx.drawImage(s.canvas, cw / 2 - (s.w * scale) / 2, ch / 2 - (s.h * scale) / 2, s.w * scale, s.h * scale);

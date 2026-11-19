@@ -18,7 +18,11 @@ La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al do
 - Dos dedos para mover y hacer zoom.
 - Todas las piezas y canicas están disponibles desde el principio. No hay tienda.
 - En Ajustes > Mundos puedes cambiar entre cuatro escenarios con fondos detallados: Normal, Fondo marino, Cielo y Espacio.
-- La **Burbuja ascensora** atrapa la canica en un aro de jabón y la hace flotar. El **Ventilador** puede desviarla y la burbuja estalla al tocar cualquier pieza, lo que permite crear tramos aéreos.
+- La **Fábrica de burbujas** atrapa la canica en un aro de jabón y la hace flotar. El **Ventilador** puede desviarla y la burbuja estalla al tocar cualquier pieza, lo que permite crear tramos aéreos.
+- Los extremos de las rampas, curvas, embudos, cintas, trampolines, espirales, fábricas de burbujas, ventiladores y propulsores se **imantan** al acercarlos, sin cambiar su rotación.
+- La **Rampa-burbuja** es una placa de hielo quebradizo: aguanta un instante y se rompe bajo el peso de una canica.
+- La **Canica arcoíris** explota en fuegos artificiales al chocar con otra canica.
+- Los portales pueden separar sus dos agujeros con el botón de tamaño.
 - En ajustes, “Borrar canvas” vacía el escenario actual; puedes deshacerlo.
 
 ## Desarrollo

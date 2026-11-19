@@ -680,6 +680,21 @@ export class PhysicsWorld {
             });
           }
         }
+        const rainbow = a.typeId === 'rainbow' ? a : b.typeId === 'rainbow' ? b : null;
+        if (rainbow && rainbow.alive) {
+          rainbow.alive = false;
+          this.events.push({
+            type: 'rainbow',
+            x: rainbow.x,
+            y: rainbow.y,
+            pieceId: 0,
+            note: -1,
+            impact: 0,
+            marbleId: rainbow.id,
+            speed: Math.hypot(a.vx - b.vx, a.vy - b.vy)
+          });
+          break;
+        }
       }
     }
   }

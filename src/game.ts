@@ -22,9 +22,12 @@ import {
   PIECE_BY_ID,
   SHOP_ITEMS,
   STARTING_OWNED,
+  defaultLen,
   getPieceDef,
   makePiece,
-  pieceContains
+  pieceContains,
+  pieceHitSize,
+  piecePorts
 } from './pieces';
 import type { UI } from './ui';
 import { CAMERA_TILT, clamp, nowMs, prefersReducedMotion, vibrate } from './util';
@@ -50,7 +53,7 @@ export type Ghost =
 type History =
   | { type: 'add'; piece: Piece }
   | { type: 'remove'; piece: Piece }
-  | { type: 'move'; id: number; fromX: number; fromY: number; toX: number; toY: number }
+  | { type: 'move'; id: number; fromX: number; fromY: number; toX: number; toY: number; fromRot: number; toRot: number }
   | { type: 'rotate'; id: number; from: number; to: number }
   | { type: 'size'; id: number; from: number; to: number }
   | { type: 'clear'; pieces: Piece[] };
@@ -117,6 +120,9 @@ export class Game {
   private dropStats: DropStats = this.emptyStats();
   private cooldowns = new Map<string, number>();
   private lastUiSave = 0;
+  private lastSnapKey = '';
+  private lastSnapAt = 0;
+  private dragStartRot = 0;
   private viewInitialized = false;
   fresh = false;
 
@@ -359,6 +365,7 @@ export class Game {
     }
     const p = makePiece(this.nextId++, defId, x, y, rot);
     if (getPieceDef(defId).tintable) p.color = Math.floor(Math.random() * COLORS.length);
+    if (commit) this.magnetSnap(p);
     this.pieces.push(p);
     this.physics.rebuild(this.pieces);
     if (commit) {
@@ -394,19 +401,69 @@ export class Game {
   }
 
   beginMove(p: Piece) {
+    this.dragStartRot = p.rot;
     this.selectPiece(p.id);
   }
 
   movePieceTo(p: Piece, x: number, y: number) {
     p.x = Math.round(x / 20) * 20;
     p.y = Math.round(y / 20) * 20;
+    this.magnetSnap(p);
     this.physics.rebuild(this.pieces);
     this.wakeMarbles();
   }
 
+  /** Atrae el extremo de una pieza hacia el extremo compatible más cercano. */
+  private magnetSnap(p: Piece, silent = false): boolean {
+    const ports = piecePorts(p);
+    if (!ports.length) return false;
+    let best: { d: number; ax: number; ay: number; bx: number; by: number; key: string } | null = null;
+    const pc = Math.cos(p.rot);
+    const ps = Math.sin(p.rot);
+    for (const q of this.pieces) {
+      if (q.id === p.id) continue;
+      const qPorts = piecePorts(q);
+      if (!qPorts.length) continue;
+      const qc = Math.cos(q.rot);
+      const qs = Math.sin(q.rot);
+      for (let ai = 0; ai < ports.length; ai++) {
+        const a = ports[ai];
+        const ax = p.x + a.x * pc - a.y * ps;
+        const ay = p.y + a.x * ps + a.y * pc;
+        const adx = a.dx * pc - a.dy * ps;
+        const ady = a.dx * ps + a.dy * pc;
+        for (let bi = 0; bi < qPorts.length; bi++) {
+          const b = qPorts[bi];
+          const bx = q.x + b.x * qc - b.y * qs;
+          const by = q.y + b.x * qs + b.y * qc;
+          const bdx = b.dx * qc - b.dy * qs;
+          const bdy = b.dx * qs + b.dy * qc;
+          const d = Math.hypot(bx - ax, by - ay);
+          if (d > 52) continue;
+          if (adx * bdx + ady * bdy > -0.7) continue;
+          if (!best || d < best.d) {
+            best = { d, ax, ay, bx, by, key: `${q.id}:${ai}:${bi}` };
+          }
+        }
+      }
+    }
+    if (!best) return false;
+    p.x += best.bx - best.ax;
+    p.y += best.by - best.ay;
+    const now = performance.now();
+    const key = `${p.id}:${best.key}`;
+    if (!silent && (key !== this.lastSnapKey || now - this.lastSnapAt > 260)) {
+      this.lastSnapKey = key;
+      this.lastSnapAt = now;
+      this.audio.clack(this.panForX(p.x));
+      this.spawnBurst(p.x, p.y, '#FFF6D8', 3, 1);
+    }
+    return true;
+  }
+
   endMove(p: Piece, fromX: number, fromY: number) {
     if (Math.abs(p.x - fromX) < 0.1 && Math.abs(p.y - fromY) < 0.1) return;
-    this.history.push({ type: 'move', id: p.id, fromX, fromY, toX: p.x, toY: p.y });
+    this.history.push({ type: 'move', id: p.id, fromX, fromY, toX: p.x, toY: p.y, fromRot: this.dragStartRot, toRot: p.rot });
     this.history = this.history.slice(-60);
     this.redoStack.length = 0;
     this.dirty = true;
@@ -454,10 +511,14 @@ export class Game {
       this.ui?.toast('info');
       return null;
     }
-    const size = p.defId === 'ramp' ? p.len : getPieceDef(p.defId).w;
-    const off = Math.max(66, size * 0.5 + 44);
-    const dx = Math.cos(p.rot) * off;
-    const dy = Math.sin(p.rot) * off;
+    const ports = piecePorts(p);
+    let span = pieceHitSize(p).w + 4;
+    if (ports.length) {
+      const xs = ports.map((port) => port.x);
+      span = Math.max(...xs) - Math.min(...xs) + 4;
+    }
+    const dx = Math.cos(p.rot) * span;
+    const dy = Math.sin(p.rot) * span;
     const clone: Piece = {
       ...p,
       id: this.nextId++,
@@ -470,7 +531,9 @@ export class Game {
       charge: undefined
     };
     this.pieces.push(clone);
+    this.magnetSnap(clone, true);
     this.physics.rebuild(this.pieces);
+    this.audio.clack(this.panForX(clone.x));
     this.history.push({ type: 'add', piece: clone });
     this.history = this.history.slice(-60);
     this.redoStack.length = 0;
@@ -548,6 +611,7 @@ export class Game {
       if (p) {
         p.x = undo ? h.fromX : h.toX;
         p.y = undo ? h.fromY : h.toY;
+        p.rot = undo ? h.fromRot : h.toRot;
       }
     } else if (h.type === 'rotate') {
       const p = this.pieces.find((x) => x.id === h.id);
@@ -721,6 +785,15 @@ export class Game {
         if (!this.allow(`marble:${e.marbleId}`, 100, now)) continue;
         this.audio.impact('brick', e.impact * 0.55, pan);
         this.spawnBurst(e.x, e.y, PALETTE.paper3, 2, 0);
+      } else if (e.type === 'rainbow') {
+        const m = this.marbles.find((x) => x.id === e.marbleId);
+        if (m) {
+          this.spawnFireworks(m.x, m.y);
+          m.alive = false;
+        }
+        this.audio.firework(pan);
+        this.score(80, e.x, e.y, e.marbleId, now);
+        this.ui?.flash(0.2);
       }
     }
   }
@@ -789,35 +862,53 @@ export class Game {
       if (p.defId !== 'bubble') continue;
       if (p.disabledUntil && p.disabledUntil > now) {
         p.charge = 0;
+        p.anim = undefined;
         continue;
       }
-      let count = 0;
+      let weight = 0;
+      const c = Math.cos(-p.rot);
+      const s = Math.sin(-p.rot);
       for (const m of this.marbles) {
-        if (!m.alive) continue;
-        if (Math.abs(m.x - p.x) < 120 && m.y < p.y + 12 && m.y > p.y - 190) count++;
+        if (!m.alive || !m.awake) continue;
+        const dx = m.x - p.x;
+        const dy = m.y - p.y;
+        const lx = dx * c - dy * s;
+        const ly = dx * s + dy * c;
+        if (Math.abs(lx) < 128 && Math.abs(ly) < 38) weight++;
       }
-      p.charge = count;
-      if (count > 10) this.explodeBubble(p, now);
+      p.charge = weight;
+      if (weight > 0) {
+        if (!p.anim) p.anim = now;
+        if (now - p.anim > 220) this.explodeBubble(p, now);
+      } else {
+        p.anim = undefined;
+      }
     }
   }
 
   private explodeBubble(p: Piece, now: number) {
     p.disabledUntil = now + 6000;
     p.charge = 0;
+    p.anim = undefined;
     this.physics.setPieceDisabled(p.id, now + 6000);
     for (const m of this.marbles) {
       if (!m.alive) continue;
-      if (Math.abs(m.x - p.x) < 150 && m.y < p.y + 24 && m.y > p.y - 220) {
-        m.vy += 90;
+      const dx = m.x - p.x;
+      const dy = m.y - p.y;
+      if (Math.abs(dx) < 150 && Math.abs(dy) < 50) {
+        m.vy += 110;
         m.awake = true;
         m.sleepTimer = 0;
       }
     }
-    this.audio.bubble(this.panForX(p.x));
-    this.spawnBurst(p.x, p.y - 20, '#8FD3EE', 24, 1);
-    this.spawnBurst(p.x, p.y - 20, PALETTE.teal, 12, 0);
-    this.addBonus(40, p.x, p.y - 20);
-    this.ui?.flash(0.14);
+    const pan = this.panForX(p.x);
+    this.audio.impact('metal', 650, pan);
+    this.audio.bubble(pan);
+    this.spawnBurst(p.x, p.y, '#BFE9FF', 18, 2);
+    this.spawnBurst(p.x, p.y, PALETTE.paper3, 8, 2);
+    this.spawnBurst(p.x, p.y, PALETTE.teal, 6, 1);
+    this.addBonus(30, p.x, p.y);
+    this.ui?.flash(0.12);
   }
 
   private updateDrop(now: number) {
@@ -873,6 +964,17 @@ export class Game {
       });
     }
     if (this.particles.length > 240) this.particles.splice(0, this.particles.length - 240);
+  }
+
+  private spawnFireworks(x: number, y: number) {
+    const colors = [PALETTE.red, PALETTE.yellow, PALETTE.green, PALETTE.teal, PALETTE.purple, PALETTE.pink];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      this.spawnBurst(x + Math.cos(a) * 22, y + Math.sin(a) * 22 - 10, colors[i], 9, 1);
+    }
+    this.spawnBurst(x, y - 10, PALETTE.paper3, 10, 1);
+    this.spawnConfetti(x, y - 24);
+    this.ui?.toast('spark', '¡Fuegos!');
   }
 
   spawnConfetti(x: number, y: number) {
@@ -995,37 +1097,10 @@ export class Game {
 
   setWorld(i: number) {
     if (i === this.activeWorld || i < 0 || i >= this.worlds.length) return;
-    this.save();
-    this.worlds[this.activeWorld].pieces = this.pieces;
-    this.worlds[this.activeWorld].camera = { ...this.camera };
     this.activeWorld = i;
-    this.pieces = this.worlds[i].pieces;
-    this.camera = this.worlds[i].camera ?? { x: 0, y: 0, zoom: 1 };
-    this.records = this.worlds[i].records ?? {
-      combo: 1,
-      speed: 0,
-      airTime: 0,
-      marbles: 0,
-      bestDrop: 0,
-      goals: 0
-    };
-    if (!this.worlds[i].records) this.worlds[i].records = this.records;
-    this.marbles = [];
-    this.particles = [];
-    this.popups = [];
-    this.selectedPieceId = 0;
-    this.armedDefId = '';
-    this.ghost = null;
-    this.dropPreview = null;
-    this.history.length = 0;
-    this.redoStack.length = 0;
-    this.physics.clearDisabled();
-    this.nextId = Math.max(0, ...this.pieces.map((p) => p.id)) + 1;
-    this.physics.rebuild(this.pieces);
     this.dirty = true;
     this.save();
-    this.ui?.refreshAll();
-    this.audio.ui();
+    this.ui?.refreshSettings();
   }
 
   resetProgress() {
@@ -1122,7 +1197,7 @@ export class Game {
           x: Number(raw.x) || 0,
           y: Number(raw.y) || 0,
           rot: Number(raw.rot) || 0,
-          len: Number(raw.len) || (raw.defId === 'ramp' ? 320 : 0),
+          len: Number(raw.len) || defaultLen(raw.defId),
           color: Number.isFinite(raw.color) ? raw.color : getPieceDef(raw.defId).defaultColor,
           variant: Number(raw.variant) || 0
         };
@@ -1172,18 +1247,36 @@ export class Game {
     for (const id of STARTING_OWNED) this.owned.add(id);
     this.worlds = data.worlds;
     this.activeWorld = data.activeWorld;
-    this.pieces = this.worlds[this.activeWorld].pieces;
-    this.camera = this.worlds[this.activeWorld].camera;
-    this.records = this.worlds[this.activeWorld].records;
+    const active = this.worlds[this.activeWorld];
+    const source = active.pieces.length ? active : this.worlds.find((w) => w.pieces.length) ?? active;
+    this.pieces = source.pieces;
+    this.camera = source.camera ?? { x: 0, y: 0, zoom: 1 };
+    this.records = source.records ?? {
+      combo: 1,
+      speed: 0,
+      airTime: 0,
+      marbles: 0,
+      bestDrop: 0,
+      goals: 0
+    };
+    if (source !== active) {
+      active.pieces = source.pieces;
+      active.camera = source.camera;
+      active.records = source.records;
+    }
     this.settings = data.settings;
     this.selectedMarble = data.selectedMarble;
     this.nextId = Math.max(0, ...this.pieces.map((p) => p.id)) + 1;
   }
 
   save() {
-    this.worlds[this.activeWorld].pieces = this.pieces;
-    this.worlds[this.activeWorld].camera = { ...this.camera };
-    this.worlds[this.activeWorld].records = this.records;
+    const active = this.worlds[this.activeWorld];
+    for (const w of this.worlds) {
+      if (w !== active) w.pieces = [];
+    }
+    active.pieces = this.pieces;
+    active.camera = { ...this.camera };
+    active.records = this.records;
     const data: SaveData = {
       v: 1,
       updatedAt: Date.now(),

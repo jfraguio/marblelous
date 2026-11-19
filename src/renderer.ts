@@ -40,7 +40,6 @@ const ELLIPSE_SHADOW = new Set([
   'portal',
   'fan',
   'booster',
-  'bubble',
   'star'
 ]);
 
@@ -671,6 +670,9 @@ export class Renderer {
         ctx.scale(1 + 0.09 * k, 1 - 0.12 * k);
       }
     }
+    if (def.id === 'bubble' && p.anim) {
+      ctx.translate(Math.sin(now * 0.09) * 1.6, 0);
+    }
 
     drawPiece(ctx, p);
 
@@ -718,13 +720,25 @@ export class Renderer {
       ctx.fill();
     }
 
-    if (p.defId === 'bubble') {
-      const n = Math.min(10, p.charge ?? 0);
-      for (let i = 0; i < 10; i++) {
-        ctx.fillStyle = i < n ? 'rgba(233,180,76,0.95)' : 'rgba(35,33,28,0.16)';
+    if (p.defId === 'bubble' && p.anim && (!p.disabledUntil || p.disabledUntil < now)) {
+      const age = (now - p.anim) / 1000;
+      if (age >= 0 && age < 0.25) {
+        const k = Math.min(1, age / 0.2);
+        ctx.strokeStyle = `rgba(255,255,255,${0.3 + k * 0.55})`;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(-45 + i * 10, -24, 3, 0, TAU);
-        ctx.fill();
+        ctx.moveTo(-46, 0);
+        ctx.lineTo(-24, -5);
+        ctx.lineTo(-4, 4);
+        ctx.lineTo(18, -3);
+        ctx.lineTo(42, 1);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-12, -6);
+        ctx.lineTo(-8, 6);
+        ctx.moveTo(24, -5);
+        ctx.lineTo(28, 5);
+        ctx.stroke();
       }
     }
 

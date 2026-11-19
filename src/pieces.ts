@@ -115,6 +115,20 @@ export const MARBLE_TYPES: MarbleType[] = [
     color: '#B45AE8',
     glow: '#5AE8D8',
     premium: true
+  },
+  {
+    id: 'rainbow',
+    label: 'Canica arcoíris',
+    price: 0,
+    r: 22.95,
+    density: 1,
+    e: 0.5,
+    mu: 0.15,
+    roll: 0.6,
+    bonus: 1.25,
+    color: '#F4F0FF',
+    glow: '#FF8FD3',
+    premium: true
   }
 ];
 
@@ -227,8 +241,6 @@ export const RAMP_CURVE_RADIUS = 100;
 export const RAMP_CURVE_START = P;
 export const RAMP_CURVE_END = 1.5 * P;
 
-export const HALF_PIPE_RADIUS = 90;
-
 export function xyloLayout(count: number): { widths: number[]; xs: number[]; total: number } {
   const widths: number[] = [];
   for (let i = 0; i < count; i++) widths.push(88 - i * 4);
@@ -243,8 +255,16 @@ export function xyloLayout(count: number): { widths: number[]; xs: number[]; tot
   return { widths, xs, total };
 }
 
-export const FUNNEL_LEFT = polylinePoints(-88, -72, -76, 18, -32, 56, 12);
-export const FUNNEL_RIGHT = polylinePoints(88, -72, 76, 18, 32, 56, 12);
+export const FUNNEL_LEFT: Vec2[] = [
+  { x: -94, y: -80 },
+  { x: -88, y: -52 },
+  { x: -76, y: -20 },
+  { x: -60, y: 14 },
+  { x: -44, y: 42 },
+  { x: -34, y: 64 },
+  { x: -36, y: 84 }
+];
+export const FUNNEL_RIGHT: Vec2[] = FUNNEL_LEFT.map((p) => ({ x: -p.x, y: p.y }));
 
 export const SPIRAL_TURNS = 2.25;
 export const SPIRAL_DURATION = 2.4;
@@ -310,22 +330,7 @@ const defs: PieceDef[] = [
     defaultColor: 3,
     build: (p) => {
       const c: Collider[] = [];
-      addCap(c, p, -104, 0, 104, 0, 6, 'rubber');
-      return { colliders: c, triggers: [] };
-    }
-  },
-  {
-    id: 'halfPipe',
-    category: 'build',
-    price: 800,
-    label: 'Medio tubo',
-    w: 200,
-    h: 200,
-    tintable: true,
-    defaultColor: 0,
-    build: (p) => {
-      const c: Collider[] = [];
-      arcColliders(c, p, HALF_PIPE_RADIUS, 0, P, 36, 6, 'brick');
+      addCap(c, p, -124, 0, 124, 0, 6, 'rubber');
       return { colliders: c, triggers: [] };
     }
   },
@@ -334,8 +339,8 @@ const defs: PieceDef[] = [
     category: 'build',
     price: 550,
     label: 'Embudo',
-    w: 200,
-    h: 160,
+    w: 210,
+    h: 180,
     tintable: true,
     defaultColor: 0,
     build: (p) => {
@@ -361,7 +366,7 @@ const defs: PieceDef[] = [
     defaultColor: 0,
     build: (p) => {
       const c: Collider[] = [];
-      addCap(c, p, -144, 0, 144, 0, 6, 'conveyor', {
+      addCap(c, p, -160, 0, 160, 0, 6, 'conveyor', {
         conveyor: 220,
         tangent: { x: 1, y: 0 }
       });
@@ -532,16 +537,16 @@ const defs: PieceDef[] = [
   },
   {
     id: 'bubble',
-    category: 'energy',
+    category: 'build',
     price: 0,
-    label: 'Burbuja',
-    w: 220,
-    h: 30,
+    label: 'Rampa-burbuja',
+    w: 240,
+    h: 26,
     tintable: false,
     defaultColor: 0,
     build: (p) => {
       const c: Collider[] = [];
-      addCap(c, p, -92, 0, 92, 0, 8, 'rubber', { bubble: true, e: 0.15 });
+      addCap(c, p, -110, 0, 110, 0, 5, 'brick', { bubble: true, e: 0.02 });
       return { colliders: c, triggers: [] };
     }
   },
@@ -549,13 +554,13 @@ const defs: PieceDef[] = [
     id: 'bubbleLift',
     category: 'energy',
     price: 0,
-    label: 'Burbuja ascensora',
-    w: 130,
-    h: 150,
+    label: 'Fábrica de burbujas',
+    w: 140,
+    h: 160,
     tintable: false,
     defaultColor: 0,
     build: (p) => {
-      const center = tx(p, 0, -10);
+      const center = tx(p, 0, 0);
       return {
         colliders: [],
         triggers: [
@@ -588,8 +593,9 @@ const defs: PieceDef[] = [
     tintable: false,
     defaultColor: 4,
     build: (p) => {
-      const a = tx(p, -62, 0);
-      const b = tx(p, 62, 0);
+      const half = p.len > 0 ? p.len / 2 : 62;
+      const a = tx(p, -half, 0);
+      const b = tx(p, half, 0);
       return {
         colliders: [],
         triggers: [
@@ -649,6 +655,12 @@ export function getPieceDef(id: string): PieceDef {
   return PIECE_BY_ID.get(id) ?? defs[0];
 }
 
+export function defaultLen(defId: string): number {
+  if (defId === 'ramp') return 320;
+  if (defId === 'portal') return 124;
+  return 0;
+}
+
 export function makePiece(id: number, defId: string, x: number, y: number, rot = 0, len?: number): Piece {
   const def = getPieceDef(defId);
   return {
@@ -657,7 +669,7 @@ export function makePiece(id: number, defId: string, x: number, y: number, rot =
     x,
     y,
     rot,
-    len: len ?? (defId === 'ramp' ? 320 : 0),
+    len: len ?? defaultLen(defId),
     color: def.defaultColor,
     variant: 0,
     bornAt: performance.now()
@@ -671,7 +683,68 @@ export function buildPiece(p: Piece): { colliders: Collider[]; triggers: Trigger
 export function pieceHitSize(p: Piece): { w: number; h: number } {
   const d = getPieceDef(p.defId);
   if (p.defId === 'ramp') return { w: p.len + 16, h: 28 };
+  if (p.defId === 'portal') return { w: p.len + 84, h: 120 };
   return { w: d.w, h: d.h };
+}
+
+export interface PiecePort {
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+}
+
+/** Puntos de conexión magnética en coordenadas locales. */
+export function piecePorts(p: Piece): PiecePort[] {
+  const out: PiecePort[] = [];
+  const add = (x: number, y: number, dx: number, dy: number) => out.push({ x, y, dx, dy });
+  if (p.defId === 'ramp') {
+    add(-p.len / 2, 0, -1, 0);
+    add(p.len / 2, 0, 1, 0);
+  } else if (p.defId === 'bubble') {
+    add(-110, 0, -1, 0);
+    add(110, 0, 1, 0);
+  } else if (p.defId === 'conveyor') {
+    add(-160, 0, -1, 0);
+    add(160, 0, 1, 0);
+  } else if (p.defId === 'trampoline') {
+    add(-124, 0, -1, 0);
+    add(124, 0, 1, 0);
+  } else if (p.defId === 'rampCurve') {
+    const r = RAMP_CURVE_RADIUS;
+    const a = { x: Math.cos(RAMP_CURVE_START) * r, y: Math.sin(RAMP_CURVE_START) * r };
+    const b = { x: Math.cos(RAMP_CURVE_END) * r, y: Math.sin(RAMP_CURVE_END) * r };
+    const ta = { x: -Math.sin(RAMP_CURVE_START), y: Math.cos(RAMP_CURVE_START) };
+    const tb = { x: -Math.sin(RAMP_CURVE_END), y: Math.cos(RAMP_CURVE_END) };
+    add(a.x, a.y, -ta.x, -ta.y);
+    add(b.x, b.y, tb.x, tb.y);
+  } else if (p.defId === 'bubbleLift') {
+    add(-48, 0, -1, 0);
+    add(48, 0, 1, 0);
+  } else if (p.defId === 'booster') {
+    add(0, 40, 0, 1);
+    add(-40, 40, -1, 0);
+    add(40, 40, 1, 0);
+  } else if (p.defId === 'fan') {
+    add(0, 106, 0, 1);
+    add(-52, 106, -1, 0);
+    add(52, 106, 1, 0);
+  } else if (p.defId === 'spiral') {
+    const a = spiralLocal(0);
+    const b = spiralLocal(1);
+    const a2 = spiralLocal(0.01);
+    const b2 = spiralLocal(0.99);
+    const ta = { x: a2.x - a.x, y: a2.y - a.y };
+    const tb = { x: b.x - b2.x, y: b.y - b2.y };
+    const la = Math.hypot(ta.x, ta.y) || 1;
+    const lb = Math.hypot(tb.x, tb.y) || 1;
+    add(a.x, a.y, -ta.x / la, -ta.y / la);
+    add(b.x, b.y, tb.x / lb, tb.y / lb);
+  } else if (p.defId === 'funnel') {
+    add(FUNNEL_LEFT[0].x, FUNNEL_LEFT[0].y, 0, -1);
+    add(FUNNEL_RIGHT[0].x, FUNNEL_RIGHT[0].y, 0, -1);
+  }
+  return out;
 }
 
 export function pieceContains(p: Piece, wx: number, wy: number): boolean {
@@ -699,12 +772,11 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'ramp', category: 'build', price: 0, label: 'Rampa', kind: 'piece' },
   { id: 'rampCurve', category: 'build', price: 250, label: 'Rampa curva', kind: 'piece' },
   { id: 'trampoline', category: 'build', price: 300, label: 'Trampolín', kind: 'piece' },
-  { id: 'halfPipe', category: 'build', price: 800, label: 'Medio tubo', kind: 'piece' },
   { id: 'funnel', category: 'build', price: 550, label: 'Embudo', kind: 'piece' },
   { id: 'conveyor', category: 'build', price: 850, label: 'Cinta', kind: 'piece' },
   { id: 'spiral', category: 'build', price: 0, label: 'Caída en espiral', kind: 'piece' },
-  { id: 'bubble', category: 'energy', price: 0, label: 'Burbuja', kind: 'piece' },
-  { id: 'bubbleLift', category: 'energy', price: 0, label: 'Burbuja ascensora', kind: 'piece' },
+  { id: 'bubble', category: 'build', price: 0, label: 'Rampa-burbuja', kind: 'piece' },
+  { id: 'bubbleLift', category: 'energy', price: 0, label: 'Fábrica de burbujas', kind: 'piece' },
   { id: 'portal', category: 'energy', price: 0, label: 'Portales', kind: 'piece' },
   { id: 'fan', category: 'energy', price: 0, label: 'Ventilador', kind: 'piece' },
   { id: 'xylo5', category: 'music', price: 650, label: 'Xilófono 5', kind: 'piece' },
@@ -717,7 +789,8 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'rubber', category: 'marbles', price: 250, label: 'Canica de goma', kind: 'marble' },
   { id: 'steel', category: 'marbles', price: 600, label: 'Canica de acero', kind: 'marble' },
   { id: 'comet', category: 'marbles', price: 1500, label: 'Canica cometa', kind: 'marble' },
-  { id: 'plasma', category: 'marbles', price: 2500, label: 'Canica plasma', kind: 'marble' }
+  { id: 'plasma', category: 'marbles', price: 2500, label: 'Canica plasma', kind: 'marble' },
+  { id: 'rainbow', category: 'marbles', price: 0, label: 'Canica arcoíris', kind: 'marble' }
 ];
 
 export const STARTING_OWNED = SHOP_ITEMS.map((i) => i.id);

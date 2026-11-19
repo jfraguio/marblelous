@@ -308,6 +308,21 @@ export class AudioEngine {
     this.tone(620, 0.16, 0.035, panX, 'triangle', 980);
   }
 
+  clack(panX: number) {
+    if (this.level === 0) return;
+    this.ensure();
+    this.noiseBurst(0.022, 2400, 0.045, panX, 'highpass');
+    this.tone(520, 0.06, 0.035, panX, 'triangle', 760);
+  }
+
+  firework(panX: number) {
+    if (this.level === 0) return;
+    this.ensure();
+    this.noiseBurst(0.14, 1800, 0.08, panX);
+    this.tone(180, 0.24, 0.05, panX, 'sine', 420);
+    this.tone(880, 0.18, 0.03, panX, 'sine', 1600);
+  }
+
   pop(panX: number) {
     if (this.level === 0) return;
     this.ensure();
