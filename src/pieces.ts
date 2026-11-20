@@ -332,17 +332,17 @@ const defs: PieceDef[] = [
     }
   },
   {
-    id: 'trampoline',
+    id: 'balance',
     category: 'build',
-    price: 300,
-    label: 'Trampolín',
-    w: 240,
-    h: 24,
-    tintable: false,
-    defaultColor: 3,
+    price: 500,
+    label: 'Balancín',
+    w: 280,
+    h: 64,
+    tintable: true,
+    defaultColor: 2,
     build: (p) => {
       const c: Collider[] = [];
-      addCap(c, p, -124, 0, 124, 0, 8, 'rubber');
+      addCap(c, p, -122, 0, 122, 0, 8, 'brick');
       return { colliders: c, triggers: [] };
     }
   },
@@ -637,6 +637,43 @@ const defs: PieceDef[] = [
     }
   },
   {
+    id: 'electromagnet',
+    category: 'energy',
+    price: 900,
+    label: 'Electroimán',
+    w: 96,
+    h: 96,
+    tintable: false,
+    defaultColor: 0,
+    build: (p) => {
+      const c: Collider[] = [];
+      addCap(c, p, 0, 0, 0, 0, 26, 'metal', { e: 0.18 });
+      const power = (p.polarity ?? 1) < 0 ? -6800 : 6800;
+      return {
+        colliders: c,
+        triggers: [
+          { kind: 'magnet', x: p.x, y: p.y, w: 0, h: 0, r: 170, rot: p.rot, power, pieceId: p.id, disabledUntil: 0, dx: 0, dy: 0, pairId: 0 }
+        ]
+      };
+    }
+  },
+  {
+    id: 'hourglass',
+    category: 'energy',
+    price: 700,
+    label: 'Reloj de arena',
+    w: 96,
+    h: 132,
+    tintable: false,
+    defaultColor: 0,
+    build: (p) => ({
+      colliders: [],
+      triggers: [
+        { kind: 'hourglass', x: p.x, y: p.y, w: 0, h: 0, r: 54, rot: p.rot, power: 0, pieceId: p.id, disabledUntil: 0, dx: 0, dy: 0, pairId: 0 }
+      ]
+    })
+  },
+  {
     id: 'xylo5',
     category: 'music',
     price: 650,
@@ -719,9 +756,6 @@ export function piecePorts(p: Piece): PiecePort[] {
   } else if (p.defId === 'conveyor') {
     add(-160, 0, -1, 0);
     add(160, 0, 1, 0);
-  } else if (p.defId === 'trampoline') {
-    add(-124, 0, -1, 0);
-    add(124, 0, 1, 0);
   } else if (p.defId === 'rampCurve') {
     const r = RAMP_CURVE_RADIUS;
     const a = { x: Math.cos(RAMP_CURVE_START) * r, y: Math.sin(RAMP_CURVE_START) * r };
@@ -769,7 +803,7 @@ export function pieceContains(p: Piece, wx: number, wy: number): boolean {
   const { w, h } = pieceHitSize(p);
   // Las barras largas y finas son difíciles de agarrar con el dedo: se les da
   // un margen de toque extra sin agrandar el rectángulo de selección visible.
-  const bar = p.defId === 'ramp' || p.defId === 'trampoline' || p.defId === 'conveyor';
+  const bar = p.defId === 'ramp' || p.defId === 'conveyor';
   const padX = bar ? 6 : 0;
   const padY = bar ? 10 : p.defId === 'bubble' ? 6 : 0;
   return Math.abs(lx) <= w / 2 + padX && Math.abs(ly) <= h / 2 + padY;
@@ -788,7 +822,7 @@ export function pieceCorners(p: Piece): Vec2[] {
 export const SHOP_ITEMS: ShopItem[] = [
   { id: 'ramp', category: 'build', price: 0, label: 'Rampa', kind: 'piece' },
   { id: 'rampCurve', category: 'build', price: 250, label: 'Rampa curva', kind: 'piece' },
-  { id: 'trampoline', category: 'build', price: 300, label: 'Trampolín', kind: 'piece' },
+  { id: 'balance', category: 'build', price: 500, label: 'Balancín', kind: 'piece' },
   { id: 'funnel', category: 'build', price: 550, label: 'Embudo', kind: 'piece' },
   { id: 'conveyor', category: 'build', price: 850, label: 'Cinta', kind: 'piece' },
   { id: 'spiral', category: 'build', price: 0, label: 'Caída en espiral', kind: 'piece' },
@@ -796,6 +830,8 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'bubbleLift', category: 'energy', price: 0, label: 'Fábrica de burbujas', kind: 'piece' },
   { id: 'portal', category: 'energy', price: 0, label: 'Portales', kind: 'piece' },
   { id: 'fan', category: 'energy', price: 0, label: 'Ventilador', kind: 'piece' },
+  { id: 'electromagnet', category: 'energy', price: 900, label: 'Electroimán', kind: 'piece' },
+  { id: 'hourglass', category: 'energy', price: 700, label: 'Reloj de arena', kind: 'piece' },
   { id: 'xylo5', category: 'music', price: 650, label: 'Xilófono 5', kind: 'piece' },
   { id: 'booster', category: 'energy', price: 600, label: 'Propulsor', kind: 'piece' },
   { id: 'cannon', category: 'energy', price: 900, label: 'Cañón', kind: 'piece' },

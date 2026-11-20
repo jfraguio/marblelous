@@ -40,7 +40,6 @@ interface DropStats {
   sparks: number;
   notes: Set<number>;
   goals: number;
-  tramps: number;
   maxCombo: number;
   maxSpeed: number;
   airTime: number;
@@ -81,6 +80,8 @@ export class Game {
   selectedMarble = 'crystal';
   ghost: Ghost | null = null;
   dropPreview: { x: number; y: number } | null = null;
+  timeScale = 1;
+  slowUntil = 0;
   overlayOpen = false;
   hidden = false;
   private overlayPaused = false;
@@ -156,7 +157,6 @@ export class Game {
       sparks: 0,
       notes: new Set<number>(),
       goals: 0,
-      tramps: 0,
       maxCombo: 1,
       maxSpeed: 0,
       airTime: 0
@@ -172,18 +172,21 @@ export class Game {
     const raw = Math.min((now - this.last) / 1000, 0.1);
     this.last = now;
     if (!this.isPaused) {
+      this.updateTimeScale(now);
       this.accumulator += raw;
       let steps = 0;
       while (this.accumulator >= FIXED && steps < 12) {
+        const simDt = FIXED * this.timeScale;
+        this.updateBalances(simDt, now);
         this.physics.clearEvents();
-        this.physics.update(this.marbles, FIXED, now);
+        this.physics.update(this.marbles, simDt, now);
         this.processEvents(now);
         this.cleanupMarbles();
         this.accumulator -= FIXED;
         steps++;
       }
       if (steps >= 12) this.accumulator = 0;
-      this.updateEffects(raw, now);
+      this.updateEffects(raw * this.timeScale, now);
       this.updateBubbles(now);
       this.updateDrop(now);
       this.updateRecords(now);
@@ -351,8 +354,11 @@ export class Game {
   }
 
   getPieceAt(wx: number, wy: number): Piece | null {
+    const now = nowMs();
     for (let i = this.pieces.length - 1; i >= 0; i--) {
-      if (pieceContains(this.pieces[i], wx, wy)) return this.pieces[i];
+      const p = this.pieces[i];
+      if (p.disabledUntil && p.disabledUntil > now) continue;
+      if (pieceContains(p, wx, wy)) return p;
     }
     return null;
   }
@@ -508,6 +514,69 @@ export class Game {
     }
   }
 
+  private updateTimeScale(now: number) {
+    if (this.timeScale >= 1) return;
+    if (now < this.slowUntil) return;
+    this.timeScale = 1;
+    this.slowUntil = 0;
+    this.ui?.flash(0.08);
+  }
+
+  /** Inclina los balancines según el peso de las canicas que tienen encima. */
+  private updateBalances(dt: number, now: number) {
+    let moved = false;
+    for (const p of this.pieces) {
+      if (p.defId !== 'balance') continue;
+      const c = Math.cos(-p.rot);
+      const s = Math.sin(-p.rot);
+      let torque = 0;
+      for (const m of this.marbles) {
+        if (!m.alive || m.bubbled || m.ridePiece) continue;
+        const dx = m.x - p.x;
+        const dy = m.y - p.y;
+        const lx = dx * c - dy * s;
+        const ly = dx * s + dy * c;
+        if (Math.abs(lx) > 142 || ly < -72 || ly > 24) continue;
+        const weight = ly < 12 ? 1 : 0.45;
+        torque += m.mass * lx * weight;
+      }
+      const target = clamp(torque * 0.00055, -0.34, 0.34);
+      const next = p.rot + (target - p.rot) * Math.min(1, dt * 10);
+      if (Math.abs(next - p.rot) < 0.0002) continue;
+      p.rot = next;
+      moved = true;
+      // Al moverse la barra hay que despertar las canicas que descansan encima.
+      for (const m of this.marbles) {
+        if (!m.alive || m.bubbled) continue;
+        const dx = m.x - p.x;
+        const dy = m.y - p.y;
+        const lx = dx * c - dy * s;
+        const ly = dx * s + dy * c;
+        if (Math.abs(lx) < 150 && ly > -70 && ly < 40 && !m.awake) {
+          m.awake = true;
+          m.sleepTimer = 0;
+        }
+      }
+    }
+    if (moved) this.physics.syncBalances(this.pieces);
+  }
+
+  toggleMagnet(id: number) {
+    const p = this.pieces.find((x) => x.id === id);
+    if (!p || p.defId !== 'electromagnet') return;
+    p.polarity = (p.polarity ?? 1) > 0 ? -1 : 1;
+    this.physics.rebuild(this.pieces);
+    this.wakeMarbles();
+    const pan = this.panForX(p.x);
+    this.audio.ui();
+    this.audio.impact('metal', p.polarity > 0 ? 460 : 320, pan);
+    this.spawnBurst(p.x, p.y, p.polarity > 0 ? PALETTE.teal : PALETTE.red, 8, 1);
+    this.dirty = true;
+    this.requestSave();
+    this.ui?.updateSelection();
+    this.ui?.refreshHud();
+  }
+
   duplicatePiece(p: Piece): Piece | null {
     if (this.pieces.length >= 2000) {
       this.audio.error();
@@ -563,6 +632,8 @@ export class Game {
     this.armedDefId = '';
     this.ghost = null;
     this.dropPreview = null;
+    this.timeScale = 1;
+    this.slowUntil = 0;
     document.body.classList.remove('armed');
     this.physics.rebuild(this.pieces);
     this.physics.clearDisabled();
@@ -723,14 +794,32 @@ export class Game {
         this.spawnBurst(e.x, e.y, NOTE_COLORS[e.note] ?? PALETTE.yellow, 5, 1);
         this.dropStats.notes.add(e.note);
         this.score(5, e.x, e.y, e.marbleId, now);
-      } else if (e.type === 'trampoline') {
-        if (!this.allow(`tramp:${e.marbleId}:${e.pieceId}`, 340, now)) continue;
+      } else if (e.type === 'hourglass') {
         const p = this.pieces.find((x) => x.id === e.pieceId);
-        if (p) p.anim = now;
-        this.audio.trampoline(e.impact, pan);
-        this.spawnBurst(e.x, e.y, PALETTE.green, 5, 0);
-        this.dropStats.tramps++;
-        this.score(8, e.x, e.y, e.marbleId, now);
+        this.slowUntil = Math.max(this.slowUntil, now + 5000);
+        this.timeScale = 0.35;
+        const respawn = this.slowUntil + 5000;
+        for (const q of this.pieces) {
+          if (q.defId !== 'hourglass') continue;
+          if (q.disabledUntil && q.disabledUntil > now) q.disabledUntil = Math.max(q.disabledUntil, respawn);
+        }
+        for (const t of this.physics.triggers) {
+          if (t.kind !== 'hourglass') continue;
+          if (t.disabledUntil > now) t.disabledUntil = Math.max(t.disabledUntil, respawn);
+        }
+        if (p) {
+          p.disabledUntil = Math.max(p.disabledUntil ?? 0, respawn);
+          if (this.selectedPieceId === p.id) {
+            this.selectedPieceId = 0;
+            this.ui?.updateSelection();
+          }
+        }
+        this.audio.portal(pan);
+        this.spawnBurst(e.x, e.y, PALETTE.yellow, 18, 2);
+        this.spawnBurst(e.x, e.y, PALETTE.paper3, 12, 1);
+        this.spawnBurst(e.x, e.y, PALETTE.teal, 8, 0);
+        this.score(25, e.x, e.y, e.marbleId, now);
+        this.ui?.flash(0.18);
       } else if (e.type === 'bumper') {
         if (!this.allow(`bump:${e.marbleId}:${e.pieceId}`, 240, now)) continue;
         const p = this.pieces.find((x) => x.id === e.pieceId);
@@ -794,14 +883,10 @@ export class Game {
         this.audio.impact('brick', e.impact * 0.55, pan);
         this.spawnBurst(e.x, e.y, PALETTE.paper3, 2, 0);
       } else if (e.type === 'rainbow') {
-        const m = this.marbles.find((x) => x.id === e.marbleId);
-        if (m) {
-          this.spawnFireworks(m.x, m.y);
-          m.alive = false;
-        }
+        this.spawnFireworks(e.x, e.y, 3);
         this.audio.firework(pan);
         this.score(80, e.x, e.y, e.marbleId, now);
-        this.ui?.flash(0.2);
+        this.ui?.flash(0.3);
       }
     }
   }
@@ -950,20 +1035,21 @@ export class Game {
 
   // ---------------- effects ----------------
 
-  spawnBurst(x: number, y: number, color: string, count: number, kind: number) {
+  spawnBurst(x: number, y: number, color: string, count: number, kind: number, scale = 1) {
     const reduce = prefersReducedMotion();
     const n = reduce ? Math.min(4, count) : count;
+    const grow = Math.min(3, Math.max(1, scale));
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
-      const sp = 40 + Math.random() * 140;
+      const sp = (40 + Math.random() * 140) * grow;
       this.particles.push({
         x,
         y,
         vx: Math.cos(a) * sp,
-        vy: Math.sin(a) * sp - 30,
-        life: 0.45 + Math.random() * 0.45,
-        maxLife: 0.9,
-        size: 2 + Math.random() * 3,
+        vy: Math.sin(a) * sp - 30 * grow,
+        life: (0.45 + Math.random() * 0.45) * (1 + (grow - 1) * 0.2),
+        maxLife: 0.9 * (1 + (grow - 1) * 0.2),
+        size: (2 + Math.random() * 3) * grow,
         color,
         kind,
         rot: Math.random() * Math.PI,
@@ -974,18 +1060,19 @@ export class Game {
     if (this.particles.length > 240) this.particles.splice(0, this.particles.length - 240);
   }
 
-  private spawnFireworks(x: number, y: number) {
+  private spawnFireworks(x: number, y: number, scale = 1) {
     const colors = [PALETTE.red, PALETTE.yellow, PALETTE.green, PALETTE.teal, PALETTE.purple, PALETTE.pink];
+    const spread = 22 * scale;
     for (let i = 0; i < 6; i++) {
       const a = (i / 6) * Math.PI * 2;
-      this.spawnBurst(x + Math.cos(a) * 22, y + Math.sin(a) * 22 - 10, colors[i], 9, 1);
+      this.spawnBurst(x + Math.cos(a) * spread, y + Math.sin(a) * spread - 10 * scale, colors[i], 9, 1, scale);
     }
-    this.spawnBurst(x, y - 10, PALETTE.paper3, 10, 1);
-    this.spawnConfetti(x, y - 24);
+    this.spawnBurst(x, y - 10 * scale, PALETTE.paper3, 10, 1, scale);
+    this.spawnConfetti(x, y - 24 * scale, scale);
     this.ui?.toast('spark', '¡Fuegos!');
   }
 
-  spawnConfetti(x: number, y: number) {
+  spawnConfetti(x: number, y: number, scale = 1) {
     const reduce = prefersReducedMotion();
     const n = reduce ? 5 : 20;
     const colors = [PALETTE.red, PALETTE.yellow, PALETTE.teal, PALETTE.green, PALETTE.pink, PALETTE.blue];
@@ -993,11 +1080,11 @@ export class Game {
       this.particles.push({
         x,
         y,
-        vx: (Math.random() - 0.5) * 360,
-        vy: -120 - Math.random() * 260,
+        vx: (Math.random() - 0.5) * 360 * scale,
+        vy: (-120 - Math.random() * 260) * scale,
         life: 1.1 + Math.random() * 0.7,
         maxLife: 1.8,
-        size: 3 + Math.random() * 4,
+        size: (3 + Math.random() * 4) * scale,
         color: colors[i % colors.length],
         kind: 3,
         rot: Math.random() * Math.PI,
@@ -1172,8 +1259,7 @@ export class Game {
     return [
       makePiece(1, 'ramp', -140, -70, 0.44, 220),
       makePiece(2, 'xylo5', 80, 20, 0.1),
-      makePiece(3, 'goal', 300, 88, 0),
-      makePiece(4, 'trampoline', 300, 160, 0)
+      makePiece(3, 'goal', 300, 88, 0)
     ];
   }
 
@@ -1192,7 +1278,8 @@ export class Game {
           rot: Number(raw.rot) || 0,
           len: Number(raw.len) || defaultLen(raw.defId),
           color: Number.isFinite(raw.color) ? raw.color : getPieceDef(raw.defId).defaultColor,
-          variant: Number(raw.variant) || 0
+          variant: Number(raw.variant) || 0,
+          polarity: raw.defId === 'electromagnet' && Number(raw.polarity) < 0 ? -1 : undefined
         };
         pieces.push(p);
       }
@@ -1285,7 +1372,8 @@ export class Game {
           rot: Math.round(p.rot * 1000) / 1000,
           len: p.len,
           color: p.color,
-          variant: p.variant
+          variant: p.variant,
+          polarity: p.defId === 'electromagnet' ? (p.polarity ?? 1) : undefined
         })),
         camera: { ...w.camera },
         records: { ...w.records }

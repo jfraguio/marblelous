@@ -24,6 +24,7 @@ export class UI {
   selection = $('#selection-ui');
   selRotate = $('#sel-rotate');
   selSize = $('#sel-size');
+  selPower = $('#sel-power');
   selDuplicate = $('#sel-duplicate');
   selDelete = $('#sel-delete');
   capacity = $('#capacity');
@@ -86,6 +87,13 @@ export class UI {
         this.game.duplicatePiece(p);
         this.updateSelection();
       }
+    });
+    this.selPower.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const p = this.game.selectedPiece;
+      if (!p || p.defId !== 'electromagnet') return;
+      this.game.toggleMagnet(p.id);
+      this.updateSelection();
     });
     this.selSize.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -265,10 +273,18 @@ export class UI {
       return;
     }
     this.selection.classList.remove('is-hidden');
-    const isRamp = p.defId === 'ramp';
-    const canSize = isRamp || p.defId === 'portal';
+    const canRotate = p.defId !== 'balance' && p.defId !== 'electromagnet';
+    const canSize = p.defId === 'ramp' || p.defId === 'portal';
+    const canPower = p.defId === 'electromagnet';
+    this.selRotate.classList.toggle('is-hidden', !canRotate);
     this.selSize.classList.toggle('is-hidden', !canSize);
-    const count = 3 + (canSize ? 1 : 0);
+    this.selPower.classList.toggle('is-hidden', !canPower);
+    const repel = canPower && (p.polarity ?? 1) < 0;
+    this.selPower.classList.toggle('repel', repel);
+    const powerLabel = repel ? 'Atraer canicas' : 'Repeler canicas';
+    this.selPower.setAttribute('aria-label', powerLabel);
+    this.selPower.title = powerLabel;
+    const count = 3 + (canSize ? 1 : 0) + (canPower ? 1 : 0) - (canRotate ? 0 : 1);
     const width = count * 52 + (count - 1) * 8;
     this.selection.style.left = `${clamp(top.x - width / 2, 8, this.game.viewW - width - 8)}px`;
     this.selection.style.top = `${clamp(top.y - 26, 64, this.game.viewH - 150)}px`;
@@ -373,7 +389,7 @@ export class UI {
       <div class="set-value world-dots">${worldDots}<span class="world-now">${worldName}</span></div>
     </div>`);
     rows.push(this.buildRow('trash', 'Borrar canvas', '', 'clear', 'reset-row'));
-    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.9.1 · sin datos · sin red</span></div>`);
+    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.10 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
     this.settingsBody.querySelectorAll<HTMLElement>('.set-row.tap').forEach((row) => {

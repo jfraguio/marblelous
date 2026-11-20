@@ -128,6 +128,11 @@ export class Input {
       return;
     }
     if (this.game.mode === 'play') {
+      const hit = this.game.getPieceAt(world.x, world.y);
+      if (hit?.defId === 'electromagnet') {
+        this.game.toggleMagnet(hit.id);
+        return;
+      }
       const rainTimer = window.setTimeout(() => {
         if (!this.single || this.single.type !== 'drop' || this.single.moved) return;
         this.single.raining = true;

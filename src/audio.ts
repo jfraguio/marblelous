@@ -263,14 +263,6 @@ export class AudioEngine {
     this.noiseBurst(0.028, 900, 0.035 * v, panX);
   }
 
-  trampoline(impact: number, panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
-    const v = clamp(impact / 1000, 0.2, 1);
-    this.tone(155, 0.24, 0.13 * v, panX, 'sine', 310);
-    this.tone(310, 0.16, 0.04 * v, panX, 'triangle', 460);
-  }
-
   bumper(panX: number) {
     if (this.level === 0) return;
     this.ensure();

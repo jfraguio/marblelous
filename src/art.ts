@@ -160,7 +160,6 @@ function trimCache() {
 function colorFor(p: Piece): string {
   const d = getPieceDef(p.defId);
   if (p.defId === 'xylo5') return PALETTE.wood;
-  if (p.defId === 'trampoline') return PALETTE.green;
   if (p.defId === 'conveyor') return PALETTE.steel;
   if (p.defId === 'bumper') return PALETTE.red;
   if (p.defId === 'booster') return PALETTE.teal;
@@ -172,6 +171,7 @@ function colorFor(p: Piece): string {
   if (p.defId === 'bubbleLift') return '#8FD3EE';
   if (p.defId === 'portal') return PALETTE.purple;
   if (p.defId === 'fan') return PALETTE.teal;
+  if (p.defId === 'electromagnet') return PALETTE.steel;
   if (d.tintable) return COLORS[p.color] ?? COLORS[d.defaultColor] ?? PALETTE.blue;
   return COLORS[d.defaultColor] ?? PALETTE.blue;
 }
@@ -211,8 +211,12 @@ function spriteDims(p: Piece): { w: number; h: number } {
       return { w: 104, h: 70 };
     case 'conveyor':
       return { w: 336, h: 28 };
-    case 'trampoline':
-      return { w: 248, h: 28 };
+    case 'balance':
+      return { w: 300, h: 140 };
+    case 'electromagnet':
+      return { w: 112, h: 112 };
+    case 'hourglass':
+      return { w: 104, h: 148 };
     default:
       return { w: getPieceDef(p.defId).w, h: getPieceDef(p.defId).h };
   }
@@ -410,38 +414,56 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.moveTo(R[2].x + 2, R[2].y);
       ctx.lineTo(R[R.length - 2].x + 2, R[R.length - 2].y);
       ctx.stroke();
-    } else if (p.defId === 'trampoline') {
-      ctx.fillStyle = PALETTE.shadow;
-      rr(ctx, -120, -1, 240, 20, 10);
-      ctx.fill();
-      ctx.fillStyle = shade(PALETTE.green, -0.25);
-      rr(ctx, -124, -11, 248, 22, 11);
-      ctx.fill();
-      ctx.fillStyle = '#7BC98F';
-      rr(ctx, -112, -7, 224, 14, 7);
-      ctx.fill();
-      ctx.strokeStyle = rgba('#ffffff', 0.55);
-      ctx.lineWidth = 2;
-      for (let i = -2; i <= 2; i++) {
-        ctx.beginPath();
-        ctx.moveTo(i * 44, -4);
-        ctx.lineTo(i * 44, 4);
-        ctx.stroke();
-      }
-      ctx.strokeStyle = rgba(PALETTE.ink, 0.14);
-      ctx.lineWidth = 1.4;
-      rr(ctx, -124, -11, 248, 22, 11);
+    } else if (p.defId === 'balance') {
+      // Barra basculante con fulcro redondo en el centro.
+      ctx.lineCap = 'butt';
+      ctx.strokeStyle = PALETTE.shadow;
+      ctx.lineWidth = 18;
+      ctx.beginPath();
+      ctx.moveTo(-118, 5);
+      ctx.lineTo(118, 5);
       ctx.stroke();
-      // patas
-      ctx.strokeStyle = shade(PALETTE.green, -0.4);
-      ctx.lineWidth = 4;
-      ctx.lineCap = 'round';
-      for (const x of [-96, 96]) {
+      ctx.strokeStyle = dark;
+      ctx.lineWidth = 24;
+      ctx.beginPath();
+      ctx.moveTo(-122, 0);
+      ctx.lineTo(122, 0);
+      ctx.stroke();
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 19;
+      ctx.stroke();
+      ctx.strokeStyle = light;
+      ctx.lineWidth = 2.8;
+      ctx.beginPath();
+      ctx.moveTo(-122, -6);
+      ctx.lineTo(122, -6);
+      ctx.stroke();
+      ctx.strokeStyle = rgba(PALETTE.ink, 0.18);
+      ctx.lineWidth = 1.3;
+      for (const x of [-94, 94]) {
         ctx.beginPath();
-        ctx.moveTo(x, 11);
-        ctx.lineTo(x - 10, 24);
+        ctx.moveTo(x, -8.5);
+        ctx.lineTo(x, 8.5);
         ctx.stroke();
       }
+      // Fulcro metálico circular.
+      ctx.fillStyle = shade(PALETTE.steel, -0.42);
+      ctx.beginPath();
+      ctx.arc(0, 0, 26, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = PALETTE.steel;
+      ctx.beginPath();
+      ctx.arc(0, 0, 20, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = rgba('#ffffff', 0.4);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(-4, -4, 9, Math.PI * 0.9, Math.PI * 1.7);
+      ctx.stroke();
+      ctx.fillStyle = rgba(PALETTE.ink, 0.35);
+      ctx.beginPath();
+      ctx.arc(0, 0, 5, 0, TAU);
+      ctx.fill();
     } else if (p.defId === 'conveyor') {
       ctx.fillStyle = PALETTE.shadow;
       rr(ctx, -156, -1, 312, 24, 9);
@@ -952,6 +974,125 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.fillStyle = PALETTE.teal;
       rr(ctx, -44, 76, 88, 16, 8);
       ctx.fill();
+    } else if (p.defId === 'electromagnet') {
+      // Herradura metálica con bobina de cobre y polos coloreados.
+      const horseshoe = () => {
+        ctx.beginPath();
+        ctx.moveTo(-24, -30);
+        ctx.lineTo(-24, 4);
+        ctx.quadraticCurveTo(-24, 30, 0, 30);
+        ctx.quadraticCurveTo(24, 30, 24, 4);
+        ctx.lineTo(24, -30);
+      };
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = PALETTE.shadow;
+      ctx.lineWidth = 22;
+      ctx.save();
+      ctx.translate(2, 5);
+      horseshoe();
+      ctx.stroke();
+      ctx.restore();
+      ctx.strokeStyle = shade(PALETTE.steel, -0.42);
+      ctx.lineWidth = 22;
+      horseshoe();
+      ctx.stroke();
+      ctx.strokeStyle = PALETTE.steel;
+      ctx.lineWidth = 16;
+      horseshoe();
+      ctx.stroke();
+      // Polos.
+      ctx.fillStyle = PALETTE.red;
+      rr(ctx, -36, -40, 22, 18, 5);
+      ctx.fill();
+      ctx.fillStyle = PALETTE.blue;
+      rr(ctx, 14, -40, 22, 18, 5);
+      ctx.fill();
+      ctx.strokeStyle = rgba(PALETTE.ink, 0.3);
+      ctx.lineWidth = 1.2;
+      rr(ctx, -36, -40, 22, 18, 5);
+      ctx.stroke();
+      rr(ctx, 14, -40, 22, 18, 5);
+      ctx.stroke();
+      // Bobina de cobre.
+      ctx.strokeStyle = '#C9823E';
+      ctx.lineWidth = 3.4;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.arc(0, 7, 19 + i * 5, Math.PI * 0.18, Math.PI * 0.82);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = rgba('#ffffff', 0.3);
+      ctx.lineWidth = 1.4;
+      horseshoe();
+      ctx.stroke();
+    } else if (p.defId === 'hourglass') {
+      // Reloj de arena de madera y cristal con la arena dorada.
+      ctx.fillStyle = PALETTE.shadow;
+      ctx.beginPath();
+      ctx.ellipse(0, 58, 36, 7, 0, 0, TAU);
+      ctx.fill();
+      // Tapas de madera.
+      for (const y of [-62, 48]) {
+        ctx.fillStyle = PALETTE.woodDark;
+        rr(ctx, -34, y, 68, 14, 6);
+        ctx.fill();
+        ctx.fillStyle = PALETTE.wood;
+        rr(ctx, -30, y + 2, 60, 8, 4);
+        ctx.fill();
+        ctx.strokeStyle = rgba('#ffffff', 0.22);
+        ctx.lineWidth = 1.2;
+        rr(ctx, -30, y + 2, 60, 8, 4);
+        ctx.stroke();
+      }
+      // Vidrio.
+      const glass = ctx.createLinearGradient(0, -46, 0, 46);
+      glass.addColorStop(0, 'rgba(225,247,255,0.62)');
+      glass.addColorStop(0.5, 'rgba(180,227,240,0.35)');
+      glass.addColorStop(1, 'rgba(126,196,218,0.5)');
+      ctx.fillStyle = glass;
+      ctx.beginPath();
+      ctx.moveTo(-22, -46);
+      ctx.lineTo(22, -46);
+      ctx.lineTo(3, -2);
+      ctx.lineTo(22, 46);
+      ctx.lineTo(-22, 46);
+      ctx.lineTo(-3, -2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = rgba('#ffffff', 0.62);
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      // Arena arriba y abajo.
+      ctx.fillStyle = PALETTE.yellow;
+      ctx.beginPath();
+      ctx.moveTo(-17, -42);
+      ctx.lineTo(17, -42);
+      ctx.lineTo(1, -19);
+      ctx.lineTo(-1, -19);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = shade(PALETTE.yellow, -0.08);
+      ctx.beginPath();
+      ctx.moveTo(-19, 42);
+      ctx.lineTo(19, 42);
+      ctx.lineTo(0, 25);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = rgba(PALETTE.yellow, 0.9);
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(0, -17);
+      ctx.lineTo(0, 25);
+      ctx.stroke();
+      // Brillo del cristal.
+      ctx.strokeStyle = rgba('#ffffff', 0.55);
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(-15, -38);
+      ctx.lineTo(-6, -8);
+      ctx.moveTo(15, 36);
+      ctx.lineTo(7, 12);
+      ctx.stroke();
     } else if (p.defId === 'xylo5') {
       const n = 5;
       const layout = xyloLayout(n);
@@ -1306,7 +1447,7 @@ export function drawPreview(canvas: HTMLCanvasElement, itemId: string, kind: 'pi
   const s = getPieceSprite(p);
   // Las piezas muy anchas (xilófonos) se recortan por los lados para que sus
   // láminas se lean; el resto se muestra completo.
-  const scale = itemId.startsWith('xylo') || itemId === 'conveyor' || itemId === 'trampoline'
+  const scale = itemId.startsWith('xylo') || itemId === 'conveyor' || itemId === 'balance'
     ? Math.min((ch - 14) / s.h, 2.2)
     : Math.min((cw - 16) / s.w, (ch - 14) / s.h, 2.2);
   ctx.drawImage(s.canvas, cw / 2 - (s.w * scale) / 2, ch / 2 - (s.h * scale) / 2, s.w * scale, s.h * scale);

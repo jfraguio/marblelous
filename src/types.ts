@@ -29,6 +29,8 @@ export interface Piece {
   anim?: number;
   disabledUntil?: number;
   charge?: number;
+  /** electromagnet polarity: 1 atrae, -1 repele */
+  polarity?: number;
   bornAt?: number;
 }
 
@@ -57,7 +59,7 @@ export interface Collider {
   uy: number;
 }
 
-export type TriggerKind = 'goal' | 'star' | 'boost' | 'portal' | 'fan' | 'spiral' | 'bubbleLift';
+export type TriggerKind = 'goal' | 'star' | 'boost' | 'portal' | 'fan' | 'spiral' | 'bubbleLift' | 'magnet' | 'hourglass';
 
 export interface Trigger {
   kind: TriggerKind;
@@ -122,6 +124,7 @@ export interface Marble {
   lastBoostPiece: number;
   lastPortalAt: number;
   lastPortalPiece: number;
+  lastRainbowAt: number;
   ridePiece: number;
   rideT: number;
   rideNextChime: number;
@@ -151,7 +154,6 @@ export interface PieceDef {
 export interface PhysEvent {
   type:
     | 'chime'
-    | 'trampoline'
     | 'bumper'
     | 'cannon'
     | 'goal'
@@ -163,7 +165,8 @@ export interface PhysEvent {
     | 'pop'
     | 'air'
     | 'marble'
-    | 'rainbow';
+    | 'rainbow'
+    | 'hourglass';
   x: number;
   y: number;
   pieceId: number;

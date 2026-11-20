@@ -40,7 +40,8 @@ const ELLIPSE_SHADOW = new Set([
   'portal',
   'fan',
   'booster',
-  'star'
+  'star',
+  'electromagnet'
 ]);
 
 export class Renderer {
@@ -144,6 +145,7 @@ export class Renderer {
     // Orden por profundidad: lo que está más abajo se dibuja encima.
     const visible: Piece[] = [];
     for (const p of g.pieces) {
+      if (p.disabledUntil && p.disabledUntil > now) continue;
       if (p.x < minX - 420 || p.x > maxX + 420 || p.y < minY - 420 || p.y > maxY + 420) continue;
       visible.push(p);
     }
@@ -637,7 +639,7 @@ export class Renderer {
   }
 
   private drawWorldPiece(ctx: CanvasRenderingContext2D, p: Piece, now: number, zoom: number) {
-    if ((p.defId === 'star' || p.defId === 'bubble') && p.disabledUntil && p.disabledUntil > now) return;
+    if ((p.defId === 'star' || p.defId === 'bubble' || p.defId === 'hourglass') && p.disabledUntil && p.disabledUntil > now) return;
     ctx.save();
     ctx.translate(p.x, p.y);
     if (p.bornAt) {
@@ -650,13 +652,6 @@ export class Renderer {
     if (p.rot) ctx.rotate(p.rot);
 
     const def = getPieceDef(p.defId);
-    if (def.id === 'trampoline' && p.anim) {
-      const age = (now - p.anim) / 1000;
-      if (age >= 0 && age < 0.22) {
-        const k = Math.exp(-age * 18);
-        ctx.scale(1 + 0.06 * k, 1 - 0.14 * k);
-      }
-    }
     if (def.id === 'goal' && p.anim) {
       const age = (now - p.anim) / 1000;
       if (age >= 0 && age < 0.7) {
@@ -675,6 +670,41 @@ export class Renderer {
     }
 
     drawPiece(ctx, p);
+
+    if (def.id === 'electromagnet') {
+      const attract = (p.polarity ?? 1) >= 0;
+      const rgb = attract ? '46,158,151' : '217,93,57';
+      const pulse = 0.5 + 0.5 * Math.sin(now * 0.004);
+      ctx.strokeStyle = `rgba(${rgb},${0.14 + 0.12 * pulse})`;
+      ctx.lineWidth = 2.2;
+      ctx.setLineDash([7, 9]);
+      ctx.lineDashOffset = attract ? -now * 0.03 : now * 0.03;
+      ctx.beginPath();
+      ctx.arc(0, 0, 150, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
+      ctx.strokeStyle = `rgba(${rgb},0.52)`;
+      ctx.lineWidth = 2.4;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 4; i++) {
+        const a = now * 0.0006 + (i * TAU) / 4;
+        const r0 = attract ? 118 : 98;
+        const r1 = attract ? 98 : 118;
+        const x0 = Math.cos(a) * r0;
+        const y0 = Math.sin(a) * r0;
+        const x1 = Math.cos(a) * r1;
+        const y1 = Math.sin(a) * r1;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        const head = attract ? Math.atan2(y1 - y0, x1 - x0) : Math.atan2(y0 - y1, x0 - x1);
+        ctx.lineTo(x1 - Math.cos(head - 0.5) * 8, y1 - Math.sin(head - 0.5) * 8);
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x1 - Math.cos(head + 0.5) * 8, y1 - Math.sin(head + 0.5) * 8);
+        ctx.stroke();
+      }
+    }
 
     if (def.id === 'bubbleLift') {
       const k = 0.5 + 0.5 * Math.sin(now * 0.003);
@@ -926,7 +956,7 @@ export class Renderer {
       ctx.globalAlpha = Math.min(1, p.alpha) * (0.35 + t * 0.65);
       ctx.fillStyle = p.color;
       if (p.kind === 1) {
-        this.spark(ctx, p.x, p.y, p.size * (0.7 + t * 0.8));
+        this.spark(ctx, p.x, p.y, p.size * (0.7 + t * 0.8), p.color);
       } else if (p.kind === 2) {
         ctx.save();
         ctx.translate(p.x, p.y);

@@ -32,6 +32,8 @@ function closestOnSegment(px: number, py: number, ax: number, ay: number, bx: nu
 
 export class PhysicsWorld {
   colliders: Collider[] = [];
+  /** Colliders que cambian de ángulo en cada paso (balancines). */
+  dynamicColliders: Collider[] = [];
   triggers: Trigger[] = [];
   spirals: SpiralInfo[] = [];
   events: PhysEvent[] = [];
@@ -41,13 +43,24 @@ export class PhysicsWorld {
   private stamp = 0;
 
   rebuild(pieces: Piece[]) {
+    const disabled = new Map<string, number>();
+    for (const t of this.triggers) {
+      const key = `${t.kind}:${t.pieceId}`;
+      disabled.set(key, Math.max(disabled.get(key) ?? 0, t.disabledUntil));
+    }
     this.colliders = [];
+    this.dynamicColliders = [];
     this.triggers = [];
     this.spirals = [];
     for (const p of pieces) {
       const built = buildPiece(p);
-      for (const c of built.colliders) this.colliders.push(c);
-      for (const t of built.triggers) this.triggers.push(t);
+      const target = p.defId === 'balance' ? this.dynamicColliders : this.colliders;
+      for (const c of built.colliders) target.push(c);
+      for (const t of built.triggers) {
+        const prev = disabled.get(`${t.kind}:${t.pieceId}`) ?? 0;
+        if (prev > t.disabledUntil) t.disabledUntil = prev;
+        this.triggers.push(t);
+      }
       if (p.defId === 'spiral') {
         this.spirals.push({ pieceId: p.id, x: p.x, y: p.y, rot: p.rot });
       }
@@ -81,6 +94,16 @@ export class PhysicsWorld {
     this.stamp = 0;
   }
 
+  /** Recalcula solo las barras móviles, sin rehacer toda la rejilla. */
+  syncBalances(pieces: Piece[]) {
+    this.dynamicColliders = [];
+    for (const p of pieces) {
+      if (p.defId !== 'balance') continue;
+      const built = buildPiece(p);
+      for (const c of built.colliders) this.dynamicColliders.push(c);
+    }
+  }
+
   clearEvents() {
     this.events.length = 0;
   }
@@ -97,7 +120,7 @@ export class PhysicsWorld {
     for (const m of marbles) {
       if (m.alive) this.stepMarble(m, dt, now);
     }
-    this.resolveMarbles(marbles);
+    this.resolveMarbles(marbles, now);
   }
 
   private stepMarble(m: Marble, dt: number, now: number) {
@@ -245,12 +268,14 @@ export class PhysicsWorld {
 
   private bubbleTouchesSolid(m: Marble): boolean {
     const bubbleR = m.r * 1.55;
-    for (const c of this.colliders) {
-      const p = closestOnSegment(m.x, m.y, c.ax, c.ay, c.bx, c.by);
-      const dx = m.x - p.x;
-      const dy = m.y - p.y;
-      const rr = c.r + bubbleR;
-      if (dx * dx + dy * dy <= rr * rr) return true;
+    for (const list of [this.colliders, this.dynamicColliders]) {
+      for (const c of list) {
+        const p = closestOnSegment(m.x, m.y, c.ax, c.ay, c.bx, c.by);
+        const dx = m.x - p.x;
+        const dy = m.y - p.y;
+        const rr = c.r + bubbleR;
+        if (dx * dx + dy * dy <= rr * rr) return true;
+      }
     }
     return false;
   }
@@ -320,6 +345,23 @@ export class PhysicsWorld {
         if (!this.inTriggerRect(m, t)) continue;
         m.vx += t.dx * t.power * h;
         m.vy += t.dy * t.power * h;
+        const sp = Math.hypot(m.vx, m.vy);
+        if (sp > 3300) {
+          const k = 3300 / sp;
+          m.vx *= k;
+          m.vy *= k;
+        }
+      } else if (t.kind === 'magnet') {
+        const dx = t.x - m.x;
+        const dy = t.y - m.y;
+        const d = Math.hypot(dx, dy);
+        if (d > t.r || d < 0.001) continue;
+        // El acero responde mucho más que el resto de canicas.
+        const metal = m.typeId === 'steel' ? 1 : m.typeId === 'plasma' ? 0.65 : 0.22;
+        const falloff = 1 - (d / t.r) * 0.55;
+        const force = t.power * metal * falloff;
+        m.vx += (dx / d) * force * h;
+        m.vy += (dy / d) * force * h;
         const sp = Math.hypot(m.vx, m.vy);
         if (sp > 3300) {
           const k = 3300 / sp;
@@ -420,6 +462,20 @@ export class PhysicsWorld {
           speed: 0
         });
         return;
+      } else if (t.kind === 'hourglass') {
+        if (!this.inTriggerCircle(m, t)) continue;
+        t.disabledUntil = now + 10000;
+        this.events.push({
+          type: 'hourglass',
+          x: t.x,
+          y: t.y,
+          pieceId: t.pieceId,
+          note: -1,
+          impact: 0,
+          marbleId: m.id,
+          speed: Math.hypot(m.vx, m.vy)
+        });
+        return;
       } else if (t.kind === 'portal') {
         if (!this.inTriggerCircle(m, t)) continue;
         if (now - m.lastPortalAt < 350) continue;
@@ -490,6 +546,15 @@ export class PhysicsWorld {
           this.collideStatic(m, this.colliders[idx], dt, now);
         }
       }
+    }
+    // Los balancines cambian de ángulo cada paso y quedan fuera de la rejilla.
+    for (const c of this.dynamicColliders) {
+      const minX = Math.min(c.ax, c.bx) - c.r;
+      const maxX = Math.max(c.ax, c.bx) + c.r;
+      const minY = Math.min(c.ay, c.by) - c.r;
+      const maxY = Math.max(c.ay, c.by) + c.r;
+      if (m.x + m.r < minX || m.x - m.r > maxX || m.y + m.r < minY || m.y - m.r > maxY) continue;
+      this.collideStatic(m, c, dt, now);
     }
   }
 
@@ -596,21 +661,10 @@ export class PhysicsWorld {
         marbleId: m.id,
         speed: Math.hypot(m.vx, m.vy)
       });
-    } else if (c.mat === 'rubber' && !c.bubble && impact > 90) {
-      this.events.push({
-        type: 'trampoline',
-        x: m.x,
-        y: m.y,
-        pieceId: c.pieceId,
-        note: -1,
-        impact,
-        marbleId: m.id,
-        speed: Math.hypot(m.vx, m.vy)
-      });
     }
   }
 
-  private resolveMarbles(marbles: Marble[]) {
+  private resolveMarbles(marbles: Marble[], now: number) {
     const n = marbles.length;
     for (let i = 0; i < n; i++) {
       const a = marbles[i];
@@ -680,20 +734,30 @@ export class PhysicsWorld {
             });
           }
         }
-        if (a.typeId === 'rainbow' && b.typeId === 'rainbow' && a.alive && b.alive) {
-          a.alive = false;
-          b.alive = false;
-          this.events.push({
-            type: 'rainbow',
-            x: (a.x + b.x) / 2,
-            y: (a.y + b.y) / 2,
-            pieceId: 0,
-            note: -1,
-            impact: 0,
-            marbleId: a.id,
-            speed: Math.hypot(a.vx - b.vx, a.vy - b.vy)
-          });
-          break;
+        if (a.typeId === 'rainbow' || b.typeId === 'rainbow') {
+          const rolls: Array<[Marble, Marble]> = [];
+          if (a.typeId === 'rainbow') rolls.push([a, b]);
+          if (b.typeId === 'rainbow') rolls.push([b, a]);
+          for (const [src, dst] of rolls) {
+            if (!src.alive || !dst.alive) continue;
+            if (now - src.lastRainbowAt < 400) continue;
+            src.lastRainbowAt = now;
+            if (Math.random() >= 0.1) continue;
+            // La arcoíris hace estallar a la otra canica (de cualquier tipo).
+            dst.alive = false;
+            this.events.push({
+              type: 'rainbow',
+              x: dst.x,
+              y: dst.y,
+              pieceId: 0,
+              note: -1,
+              impact: 0,
+              marbleId: dst.id,
+              speed: Math.hypot(a.vx - b.vx, a.vy - b.vy)
+            });
+            break;
+          }
+          if (!a.alive || !b.alive) break;
         }
       }
     }
@@ -758,6 +822,7 @@ export function createMarble(
     lastBoostPiece: 0,
     lastPortalAt: -1000,
     lastPortalPiece: 0,
+    lastRainbowAt: -1000,
     ridePiece: 0,
     rideT: 0,
     rideNextChime: 0,

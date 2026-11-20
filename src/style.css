@@ -282,6 +282,8 @@ button:focus-visible {
 .sel-btn:active { transform: scale(.92); }
 .sel-btn .ic { width: 22px; height: 22px; }
 .sel-btn.danger { background: var(--red); }
+.sel-btn.power { background: var(--teal); }
+.sel-btn.power.repel { background: var(--yellow); color: var(--ink); }
 
 /* ---------- Tray ---------- */
 
