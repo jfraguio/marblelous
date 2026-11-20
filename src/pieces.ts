@@ -312,7 +312,7 @@ const defs: PieceDef[] = [
     defaultColor: 1,
     build: (p) => {
       const c: Collider[] = [];
-      addCap(c, p, -p.len / 2, 0, p.len / 2, 0, 6, 'brick');
+      addCap(c, p, -p.len / 2, 0, p.len / 2, 0, 8, 'brick');
       return { colliders: c, triggers: [] };
     }
   },
@@ -342,7 +342,7 @@ const defs: PieceDef[] = [
     defaultColor: 3,
     build: (p) => {
       const c: Collider[] = [];
-      addCap(c, p, -124, 0, 124, 0, 6, 'rubber');
+      addCap(c, p, -124, 0, 124, 0, 8, 'rubber');
       return { colliders: c, triggers: [] };
     }
   },
@@ -378,7 +378,7 @@ const defs: PieceDef[] = [
     defaultColor: 0,
     build: (p) => {
       const c: Collider[] = [];
-      addCap(c, p, -160, 0, 160, 0, 6, 'conveyor', {
+      addCap(c, p, -160, 0, 160, 0, 8, 'conveyor', {
         conveyor: 220,
         tangent: { x: 1, y: 0 }
       });
@@ -767,7 +767,12 @@ export function pieceContains(p: Piece, wx: number, wy: number): boolean {
   const lx = dx * c - dy * s;
   const ly = dx * s + dy * c;
   const { w, h } = pieceHitSize(p);
-  return Math.abs(lx) <= w / 2 && Math.abs(ly) <= h / 2;
+  // Las barras largas y finas son difíciles de agarrar con el dedo: se les da
+  // un margen de toque extra sin agrandar el rectángulo de selección visible.
+  const bar = p.defId === 'ramp' || p.defId === 'trampoline' || p.defId === 'conveyor';
+  const padX = bar ? 6 : 0;
+  const padY = bar ? 10 : p.defId === 'bubble' ? 6 : 0;
+  return Math.abs(lx) <= w / 2 + padX && Math.abs(ly) <= h / 2 + padY;
 }
 
 export function pieceCorners(p: Piece): Vec2[] {

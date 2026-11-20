@@ -296,32 +296,32 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       const L = p.len;
       ctx.lineCap = 'butt';
       ctx.strokeStyle = PALETTE.shadow;
-      ctx.lineWidth = 12;
+      ctx.lineWidth = 15;
       ctx.beginPath();
-      ctx.moveTo(-L / 2 + 2, 4);
-      ctx.lineTo(L / 2 + 2, 4);
+      ctx.moveTo(-L / 2 + 2, 5);
+      ctx.lineTo(L / 2 + 2, 5);
       ctx.stroke();
       ctx.strokeStyle = dark;
-      ctx.lineWidth = 16;
+      ctx.lineWidth = 20;
       ctx.beginPath();
       ctx.moveTo(-L / 2, 0);
       ctx.lineTo(L / 2, 0);
       ctx.stroke();
       ctx.strokeStyle = c;
-      ctx.lineWidth = 12;
+      ctx.lineWidth = 16;
       ctx.stroke();
       ctx.strokeStyle = light;
-      ctx.lineWidth = 2.4;
+      ctx.lineWidth = 2.6;
       ctx.beginPath();
-      ctx.moveTo(-L / 2, -3.5);
-      ctx.lineTo(L / 2, -3.5);
+      ctx.moveTo(-L / 2, -4.5);
+      ctx.lineTo(L / 2, -4.5);
       ctx.stroke();
       ctx.strokeStyle = rgba(PALETTE.ink, 0.28);
       ctx.lineWidth = 1.2;
       for (const ex of [-L / 2 + 0.8, L / 2 - 0.8]) {
         ctx.beginPath();
-        ctx.moveTo(ex, -7.5);
-        ctx.lineTo(ex, 7.5);
+        ctx.moveTo(ex, -9.5);
+        ctx.lineTo(ex, 9.5);
         ctx.stroke();
       }
     } else if (p.defId === 'rampCurve') {
@@ -412,25 +412,25 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.stroke();
     } else if (p.defId === 'trampoline') {
       ctx.fillStyle = PALETTE.shadow;
-      rr(ctx, -120, -6 + 4, 240, 16, 8);
+      rr(ctx, -120, -1, 240, 20, 10);
       ctx.fill();
       ctx.fillStyle = shade(PALETTE.green, -0.25);
-      rr(ctx, -124, -8, 248, 18, 9);
+      rr(ctx, -124, -11, 248, 22, 11);
       ctx.fill();
       ctx.fillStyle = '#7BC98F';
-      rr(ctx, -112, -5, 224, 12, 6);
+      rr(ctx, -112, -7, 224, 14, 7);
       ctx.fill();
       ctx.strokeStyle = rgba('#ffffff', 0.55);
       ctx.lineWidth = 2;
       for (let i = -2; i <= 2; i++) {
         ctx.beginPath();
-        ctx.moveTo(i * 44, -3);
-        ctx.lineTo(i * 44, 3);
+        ctx.moveTo(i * 44, -4);
+        ctx.lineTo(i * 44, 4);
         ctx.stroke();
       }
       ctx.strokeStyle = rgba(PALETTE.ink, 0.14);
       ctx.lineWidth = 1.4;
-      rr(ctx, -124, -8, 248, 18, 9);
+      rr(ctx, -124, -11, 248, 22, 11);
       ctx.stroke();
       // patas
       ctx.strokeStyle = shade(PALETTE.green, -0.4);
@@ -438,23 +438,23 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.lineCap = 'round';
       for (const x of [-96, 96]) {
         ctx.beginPath();
-        ctx.moveTo(x, 8);
-        ctx.lineTo(x - 10, 22);
+        ctx.moveTo(x, 11);
+        ctx.lineTo(x - 10, 24);
         ctx.stroke();
       }
     } else if (p.defId === 'conveyor') {
       ctx.fillStyle = PALETTE.shadow;
-      rr(ctx, -156, -8 + 4, 312, 20, 7);
+      rr(ctx, -156, -1, 312, 24, 9);
       ctx.fill();
       ctx.fillStyle = shade(PALETTE.steel, -0.3);
-      rr(ctx, -160, -11, 320, 22, 8);
+      rr(ctx, -160, -13, 320, 26, 9);
       ctx.fill();
       ctx.fillStyle = '#59636D';
-      rr(ctx, -148, -6, 296, 12, 4);
+      rr(ctx, -148, -7, 296, 14, 5);
       ctx.fill();
       ctx.strokeStyle = rgba('#ffffff', 0.18);
       ctx.lineWidth = 1.4;
-      rr(ctx, -160, -11, 320, 22, 8);
+      rr(ctx, -160, -13, 320, 26, 9);
       ctx.stroke();
     } else if (p.defId === 'bumper') {
       ctx.fillStyle = PALETTE.shadow;

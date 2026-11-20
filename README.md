@@ -15,6 +15,7 @@ La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al do
 - Toca una pieza de la bandeja y después toca el lienzo para colocarla. La pieza se deselecciona al colocarla: para poner otra, vuelve a tocarla en la bandeja.
 - Mantén pulsada una pieza en la bandeja para dejarla **fijada**: cada toque en el lienzo coloca una copia. Vuelve a tocarla en la bandeja (o toca otra pieza) para deseleccionarla.
 - Toca una pieza ya colocada para seleccionarla. Los botones flotantes permiten rotarla, duplicarla, cambiar su longitud (rampas) o borrarla. Cada pieza nueva recibe un color aleatorio de la paleta.
+- Las rampas, trampolines y cintas son algo más gruesas y tienen una zona de toque generosa: se pueden agarrar un poco por encima o por debajo de la barra para moverlas.
 - Cambia a la canica y toca el lienzo para soltar una; mantén pulsado para hacer lluvia.
 - Dos dedos para mover y hacer zoom.
 - Todas las piezas y canicas están disponibles desde el principio. No hay tienda.

@@ -1,6 +1,6 @@
 /* Marblelous — offline shell. Cero dependencias. */
 importScripts('./precache-manifest.js');
-const VERSION = 'marblelous-v12';
+const VERSION = 'marblelous-v13';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './precache-manifest.js'];
 
 async function precache(cache) {

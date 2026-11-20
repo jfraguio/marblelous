@@ -373,7 +373,7 @@ export class UI {
       <div class="set-value world-dots">${worldDots}<span class="world-now">${worldName}</span></div>
     </div>`);
     rows.push(this.buildRow('trash', 'Borrar canvas', '', 'clear', 'reset-row'));
-    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.9.0 · sin datos · sin red</span></div>`);
+    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.9.1 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
     this.settingsBody.querySelectorAll<HTMLElement>('.set-row.tap').forEach((row) => {
