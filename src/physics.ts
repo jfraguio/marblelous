@@ -680,17 +680,17 @@ export class PhysicsWorld {
             });
           }
         }
-        const rainbow = a.typeId === 'rainbow' ? a : b.typeId === 'rainbow' ? b : null;
-        if (rainbow && rainbow.alive) {
-          rainbow.alive = false;
+        if (a.typeId === 'rainbow' && b.typeId === 'rainbow' && a.alive && b.alive) {
+          a.alive = false;
+          b.alive = false;
           this.events.push({
             type: 'rainbow',
-            x: rainbow.x,
-            y: rainbow.y,
+            x: (a.x + b.x) / 2,
+            y: (a.y + b.y) / 2,
             pieceId: 0,
             note: -1,
             impact: 0,
-            marbleId: rainbow.id,
+            marbleId: a.id,
             speed: Math.hypot(a.vx - b.vx, a.vy - b.vy)
           });
           break;

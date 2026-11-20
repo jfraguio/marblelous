@@ -264,7 +264,7 @@ export class Input {
         if (e.clientY < window.innerHeight - 96) {
           const w = s.world;
           const piece = this.game.addPiece(s.defId, Math.round(w.x / 20) * 20, Math.round(w.y / 20) * 20, 0);
-          if (piece) this.game.disarmPiece();
+          if (piece && !this.game.armedSticky) this.game.disarmPiece();
         }
         this.game.ghost = null;
       }

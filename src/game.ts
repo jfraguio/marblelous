@@ -76,6 +76,7 @@ export class Game {
 
   mode: Mode = 'build';
   armedDefId = '';
+  armedSticky = false;
   selectedPieceId = 0;
   selectedMarble = 'crystal';
   ghost: Ghost | null = null;
@@ -98,7 +99,6 @@ export class Game {
     goals: 0
   };
   settings: Settings = {
-    sound: 2,
     quality: 'auto',
     haptics: false
   };
@@ -300,6 +300,7 @@ export class Game {
     if (this.mode === mode) return;
     this.mode = mode;
     this.armedDefId = '';
+    this.armedSticky = false;
     this.selectedPieceId = 0;
     this.ghost = null;
     this.dropPreview = null;
@@ -310,13 +311,14 @@ export class Game {
     document.body.classList.remove('armed');
   }
 
-  armPiece(defId: string) {
+  armPiece(defId: string, sticky = false) {
     if (!this.owned.has(defId)) return;
     if (this.armedDefId === defId) {
       this.disarmPiece();
       return;
     }
     this.armedDefId = defId;
+    this.armedSticky = sticky;
     this.selectedPieceId = 0;
     this.mode = 'build';
     this.ghost = null;
@@ -331,6 +333,7 @@ export class Game {
   disarmPiece() {
     if (!this.armedDefId) return;
     this.armedDefId = '';
+    this.armedSticky = false;
     this.ghost = null;
     document.body.classList.remove('armed');
     this.ui?.refreshTray();
@@ -633,7 +636,12 @@ export class Game {
   // ---------------- marbles ----------------
 
   spawnMarble(x: number, y: number, typeId = this.selectedMarble) {
-    if (!this.owned.has(typeId)) return null;
+    let chosen = typeId;
+    if (chosen === 'surprise') {
+      const pool = MARBLE_TYPES.filter((t) => t.id !== 'surprise' && this.owned.has(t.id));
+      chosen = pool.length ? pool[Math.floor(Math.random() * pool.length)].id : 'crystal';
+    }
+    if (!this.owned.has(chosen)) return null;
     if (this.marbles.length >= 200) {
       const old = this.marbles.shift();
       if (old) {
@@ -641,7 +649,7 @@ export class Game {
         this.spawnBurst(old.x, old.y, PALETTE.muted, 3, 0);
       }
     }
-    const type = MARBLE_BY_ID.get(typeId) ?? MARBLE_TYPES[0];
+    const type = MARBLE_BY_ID.get(chosen) ?? MARBLE_TYPES[0];
     if (!this.dropActive) {
       this.dropActive = true;
       this.dropId++;
@@ -650,8 +658,8 @@ export class Game {
     const m = createMarble(this.nextMarbleId++, type, x, y, this.dropId, nowMs());
     this.marbles.push(m);
     this.lastSpawn = nowMs();
-    if (this.selectedMarble !== typeId) {
-      this.selectedMarble = typeId;
+    if (this.selectedMarble !== 'surprise' && this.selectedMarble !== chosen) {
+      this.selectedMarble = chosen;
       this.ui?.refreshTray();
     }
     this.records.marbles = Math.max(this.records.marbles, this.marbles.length);
@@ -1060,21 +1068,7 @@ export class Game {
   // ---------------- settings ----------------
 
   applySettings() {
-    this.audio.setLevel(this.settings.sound);
-  }
-
-  setSound(level: 0 | 1 | 2) {
-    this.settings.sound = level;
-    this.applySettings();
-    this.dirty = true;
-    this.requestSave();
-    this.ui?.refreshSettings();
-    this.ui?.refreshSound();
-  }
-
-  cycleSound() {
-    this.setSound(((this.settings.sound + 1) % 3) as 0 | 1 | 2);
-    this.audio.ui();
+    this.audio.setLevel(2);
   }
 
   cycleQuality() {
@@ -1167,7 +1161,6 @@ export class Game {
         empty()
       ],
       settings: {
-        sound: 2,
         quality: 'auto',
         haptics: false
       },
@@ -1232,7 +1225,6 @@ export class Game {
       activeWorld: clamp(Number(data.activeWorld) || 0, 0, 3),
       worlds,
       settings: {
-        sound: (data.settings?.sound ?? fallback.settings.sound) as Settings['sound'],
         quality: (data.settings?.quality ?? fallback.settings.quality) as Settings['quality'],
         haptics: !!(data.settings?.haptics ?? fallback.settings.haptics)
       },

@@ -410,7 +410,7 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.moveTo(R[2].x + 2, R[2].y);
       ctx.lineTo(R[R.length - 2].x + 2, R[R.length - 2].y);
       ctx.stroke();
-    } else if (p.defId === 'trampoline') {    } else if (p.defId === 'trampoline') {
+    } else if (p.defId === 'trampoline') {
       ctx.fillStyle = PALETTE.shadow;
       rr(ctx, -120, -6 + 4, 240, 16, 8);
       ctx.fill();
@@ -432,6 +432,16 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.lineWidth = 1.4;
       rr(ctx, -124, -8, 248, 18, 9);
       ctx.stroke();
+      // patas
+      ctx.strokeStyle = shade(PALETTE.green, -0.4);
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      for (const x of [-96, 96]) {
+        ctx.beginPath();
+        ctx.moveTo(x, 8);
+        ctx.lineTo(x - 10, 22);
+        ctx.stroke();
+      }
     } else if (p.defId === 'conveyor') {
       ctx.fillStyle = PALETTE.shadow;
       rr(ctx, -156, -8 + 4, 312, 20, 7);
@@ -1019,6 +1029,27 @@ export function getMarbleSprite(type: MarbleType): Sprite {
   const rainbow = type.id === 'rainbow';
   const s = makeSprite(34, 34, (ctx) => {
     const r = 17;
+    if (type.id === 'surprise') {
+      ctx.fillStyle = '#F7F1E3';
+      ctx.beginPath();
+      ctx.arc(0, 0, r - 0.5, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = rgba(PALETTE.ink, 0.4);
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(0, 0, r - 1.2, 0, TAU);
+      ctx.stroke();
+      ctx.fillStyle = PALETTE.ink;
+      ctx.font = '800 21px ui-rounded, "SF Pro Rounded", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('?', 0, 1);
+      ctx.fillStyle = rgba(PALETTE.yellow, 0.7);
+      ctx.beginPath();
+      ctx.arc(-6, -7.5, 2.6, 0, TAU);
+      ctx.fill();
+      return;
+    }
 
     // Esfera base: la luz viene de arriba a la izquierda.
     const g = ctx.createRadialGradient(-6, -7, 1, 0, 1.5, r);
@@ -1275,7 +1306,7 @@ export function drawPreview(canvas: HTMLCanvasElement, itemId: string, kind: 'pi
   const s = getPieceSprite(p);
   // Las piezas muy anchas (xilófonos) se recortan por los lados para que sus
   // láminas se lean; el resto se muestra completo.
-  const scale = itemId.startsWith('xylo') || itemId === 'conveyor'
+  const scale = itemId.startsWith('xylo') || itemId === 'conveyor' || itemId === 'trampoline'
     ? Math.min((ch - 14) / s.h, 2.2)
     : Math.min((cw - 16) / s.w, (ch - 14) / s.h, 2.2);
   ctx.drawImage(s.canvas, cw / 2 - (s.w * scale) / 2, ch / 2 - (s.h * scale) / 2, s.w * scale, s.h * scale);

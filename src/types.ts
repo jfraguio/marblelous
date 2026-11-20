@@ -208,7 +208,6 @@ export interface Records {
 }
 
 export interface Settings {
-  sound: 0 | 1 | 2;
   quality: 'auto' | 'high' | 'low';
   haptics: boolean;
 }

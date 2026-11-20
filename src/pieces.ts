@@ -129,6 +129,18 @@ export const MARBLE_TYPES: MarbleType[] = [
     color: '#F4F0FF',
     glow: '#FF8FD3',
     premium: true
+  },
+  {
+    id: 'surprise',
+    label: 'Canica sorpresa',
+    price: 0,
+    r: 22.95,
+    density: 1,
+    e: 0.5,
+    mu: 0.2,
+    roll: 0.7,
+    bonus: 1,
+    color: '#F2EFE7'
   }
 ];
 
@@ -790,7 +802,8 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'steel', category: 'marbles', price: 600, label: 'Canica de acero', kind: 'marble' },
   { id: 'comet', category: 'marbles', price: 1500, label: 'Canica cometa', kind: 'marble' },
   { id: 'plasma', category: 'marbles', price: 2500, label: 'Canica plasma', kind: 'marble' },
-  { id: 'rainbow', category: 'marbles', price: 0, label: 'Canica arcoíris', kind: 'marble' }
+  { id: 'rainbow', category: 'marbles', price: 0, label: 'Canica arcoíris', kind: 'marble' },
+  { id: 'surprise', category: 'marbles', price: 0, label: 'Canica sorpresa', kind: 'marble' }
 ];
 
 export const STARTING_OWNED = SHOP_ITEMS.map((i) => i.id);

@@ -13,6 +13,7 @@ https://fraguio.com/marblelous/
 La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al dominio configurado.
 
 - Toca una pieza de la bandeja y después toca el lienzo para colocarla. La pieza se deselecciona al colocarla: para poner otra, vuelve a tocarla en la bandeja.
+- Mantén pulsada una pieza en la bandeja para dejarla **fijada**: cada toque en el lienzo coloca una copia. Vuelve a tocarla en la bandeja (o toca otra pieza) para deseleccionarla.
 - Toca una pieza ya colocada para seleccionarla. Los botones flotantes permiten rotarla, duplicarla, cambiar su longitud (rampas) o borrarla. Cada pieza nueva recibe un color aleatorio de la paleta.
 - Cambia a la canica y toca el lienzo para soltar una; mantén pulsado para hacer lluvia.
 - Dos dedos para mover y hacer zoom.
@@ -21,7 +22,9 @@ La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al do
 - La **Fábrica de burbujas** atrapa la canica en un aro de jabón y la hace flotar. El **Ventilador** puede desviarla y la burbuja estalla al tocar cualquier pieza, lo que permite crear tramos aéreos.
 - Los extremos de las rampas, curvas, embudos, cintas, trampolines, espirales, fábricas de burbujas, ventiladores y propulsores se **imantan** al acercarlos, sin cambiar su rotación.
 - La **Rampa-burbuja** es una placa de hielo quebradizo: aguanta un instante y se rompe bajo el peso de una canica.
-- La **Canica arcoíris** explota en fuegos artificiales al chocar con otra canica.
+- La **Canica sorpresa** sale como un círculo con `?` en la bandeja: al lanzarla aparece una canica aleatoria de entre todas.
+- La **Canica arcoíris** explota en fuegos artificiales solo al chocar con otra canica arcoíris.
+- El sonido está siempre activado; no hay control de volumen.
 - Los portales pueden separar sus dos agujeros con el botón de tamaño.
 - En ajustes, “Borrar canvas” vacía el escenario actual; puedes deshacerlo.
 

@@ -18,13 +18,9 @@ type OverlayId = 'settings';
 export class UI {
   game: Game;
   tray = $('#tray');
-  currency = $('#currency');
-  sparks = $('#sparks');
   combo = $('#combo');
   comboMult = $('#combo-mult');
   comboRing = $('.combo-ring');
-  btnSound = $('#btn-sound');
-  soundIcon = $('#sound-icon');
   selection = $('#selection-ui');
   selRotate = $('#sel-rotate');
   selSize = $('#sel-size');
@@ -40,7 +36,10 @@ export class UI {
 
   private toastTimer = 0;
   private summaryTimer = 0;
-  private lastCurrency = -1;
+  private longPressTimer = 0;
+  private longPressId = '';
+  private longPressFired = false;
+  private longPressStart = { x: 0, y: 0 };
   private rotating: {
     pieceId: number;
     center: { x: number; y: number };
@@ -64,10 +63,6 @@ export class UI {
       this.game.saveCamera();
     });
     $('#btn-settings').addEventListener('click', () => this.openOverlay('settings'));
-    this.btnSound.addEventListener('click', () => {
-      this.game.cycleSound();
-      this.refreshHud();
-    });
 
     $$('.close').forEach((btn) => {
       btn.addEventListener('click', () => this.closeOverlays());
@@ -123,7 +118,41 @@ export class UI {
       { passive: false }
     );
 
+    const clearLongPress = () => {
+      window.clearTimeout(this.longPressTimer);
+    };
+    this.tray.addEventListener('pointerdown', (e) => {
+      const card = (e.target as HTMLElement).closest('.card') as HTMLElement | null;
+      if (!card || card.dataset.kind !== 'piece') return;
+      const id = card.dataset.id ?? '';
+      this.longPressFired = false;
+      this.longPressId = id;
+      this.longPressStart = { x: e.clientX, y: e.clientY };
+      window.clearTimeout(this.longPressTimer);
+      this.longPressTimer = window.setTimeout(() => {
+        if (!this.longPressId) return;
+        this.longPressFired = true;
+        this.game.armPiece(this.longPressId, true);
+        this.game.audio.ui();
+        this.refreshTray();
+      }, 380);
+    });
+    this.tray.addEventListener('pointermove', (e) => {
+      if (!this.longPressId) return;
+      if (Math.hypot(e.clientX - this.longPressStart.x, e.clientY - this.longPressStart.y) > 8) {
+        this.longPressId = '';
+        clearLongPress();
+      }
+    });
+    this.tray.addEventListener('pointerup', clearLongPress);
+    this.tray.addEventListener('pointercancel', clearLongPress);
+    this.tray.addEventListener('pointerleave', clearLongPress);
+
     this.tray.addEventListener('click', (e) => {
+      if (this.longPressFired) {
+        this.longPressFired = false;
+        return;
+      }
       const card = (e.target as HTMLElement).closest('.card') as HTMLElement | null;
       if (!card) return;
       const kind = card.dataset.kind;
@@ -155,23 +184,14 @@ export class UI {
     this.refreshHud();
     this.refreshTray();
     this.refreshMode();
-    this.refreshSound();
     this.updateSelection();
     this.refreshSettings();
   }
 
   refreshHud() {
-    this.sparks.textContent = fmt(this.game.currency);
     const cap = this.game.pieces.length;
     this.capacity.classList.toggle('is-hidden', cap < 1800);
     this.capacityNum.textContent = `${cap}`;
-    if (this.lastCurrency >= 0 && this.game.currency !== this.lastCurrency) {
-      this.currency.classList.remove('pulse');
-      void this.currency.offsetWidth;
-      this.currency.classList.add('pulse');
-    }
-    this.lastCurrency = this.game.currency;
-
     const now = performance.now();
     const showCombo = this.game.comboChain > 0 && now - this.game.comboAt < 2500;
     this.combo.classList.toggle('is-hidden', !showCombo);
@@ -186,12 +206,6 @@ export class UI {
   refreshMode() {
     $('#mode-build').classList.toggle('is-active', this.game.mode === 'build');
     $('#mode-play').classList.toggle('is-active', this.game.mode === 'play');
-  }
-
-  refreshSound() {
-    const level = this.game.settings.sound;
-    this.soundIcon.innerHTML = `<use href="#i-sound${level}"></use>`;
-    this.btnSound.setAttribute('aria-label', `Sonido ${level === 0 ? 'apagado' : level === 1 ? 'bajo' : 'alto'}`);
   }
 
   refreshTray() {
@@ -343,7 +357,6 @@ export class UI {
     const s = this.game.settings;
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const rows: string[] = [];
-    rows.push(this.buildRow('sound2', 'Sonido', this.dots(s.sound === 2 ? 3 : s.sound, 3), 'sound'));
     const q = s.quality === 'high' ? 3 : s.quality === 'low' ? 1 : 2;
     rows.push(this.buildRow('quality', 'Calidad', this.dots(q, 3, 'warn'), 'quality'));
     rows.push(this.buildRow('haptics', 'Vibración', this.dots(s.haptics && !ios ? 1 : 0, 1), 'haptics'));
@@ -360,14 +373,13 @@ export class UI {
       <div class="set-value world-dots">${worldDots}<span class="world-now">${worldName}</span></div>
     </div>`);
     rows.push(this.buildRow('trash', 'Borrar canvas', '', 'clear', 'reset-row'));
-    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.8.0 · sin datos · sin red</span></div>`);
+    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.9.0 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
     this.settingsBody.querySelectorAll<HTMLElement>('.set-row.tap').forEach((row) => {
       const action = row.dataset.action ?? '';
       row.addEventListener('click', () => {
-        if (action === 'sound') this.game.cycleSound();
-        else if (action === 'quality') this.game.cycleQuality();
+        if (action === 'quality') this.game.cycleQuality();
         else if (action === 'haptics') this.game.toggleHaptics();
         else if (action === 'clear') {
           this.game.clearCanvas();
