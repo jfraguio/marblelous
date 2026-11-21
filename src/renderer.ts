@@ -8,7 +8,8 @@ import {
   getPieceShadow,
   LIGHT_X,
   LIGHT_Y,
-  setSpriteBudget
+  setSpriteBudget,
+  setSpriteScale
 } from './art';
 import {
   MARBLE_BY_ID,
@@ -35,16 +36,10 @@ interface Dust {
   size: number;
 }
 
-const SHADOW_OFF_X = -LIGHT_X * 13;
-const SHADOW_OFF_Y = -LIGHT_Y * 13;
-const ELLIPSE_SHADOW = new Set([
-  'spiral',
-  'portal',
-  'fan',
-  'booster',
-  'star',
-  'electromagnet'
-]);
+const SHADOW_OFF_X = -LIGHT_X * 6;
+const SHADOW_OFF_Y = -LIGHT_Y * 8;
+// Piezas que flotan o no tienen base sólida: mancha suave en vez de silueta.
+const ELLIPSE_SHADOW = new Set(['portal', 'fan', 'star']);
 
 export class Renderer {
   private canvas: HTMLCanvasElement;
@@ -58,6 +53,7 @@ export class Renderer {
   private level = 0;
   private qualitySetting = 'auto';
   private avgFrame = 16.7;
+  private spriteScale = 2;
   private lastFrame = 0;
   private lastCheck = 0;
   private lastRender = 0;
@@ -101,6 +97,8 @@ export class Renderer {
     this.dpr = dpr;
     this.canvas.width = Math.round(cssW * dpr);
     this.canvas.height = Math.round(cssH * dpr);
+    this.ctx.imageSmoothingEnabled = true;
+    this.ctx.imageSmoothingQuality = 'high';
     this.game.setViewport(cssW, cssH);
   }
 
@@ -122,6 +120,17 @@ export class Renderer {
     this.lastRender = now;
     const zoom = cam.zoom;
     this.theme = worldTheme(g.activeWorld);
+
+    // LOD: se hornea a la resolución real (zoom × DPR) y se sube de nivel con
+    // histéresis, para no re-hornear sprites en cada frame de pinch.
+    const needed = zoom * dpr;
+    let targetScale = this.spriteScale;
+    if (needed > targetScale + 0.25) targetScale = Math.min(3, Math.ceil(needed * 4) / 4);
+    else if (needed < targetScale * 0.72) targetScale = Math.max(1, Math.ceil(needed * 4) / 4);
+    if (targetScale !== this.spriteScale) {
+      this.spriteScale = targetScale;
+      setSpriteScale(targetScale);
+    }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = this.theme.paper;
@@ -659,8 +668,8 @@ export class Renderer {
   private drawPieceShadow(ctx: CanvasRenderingContext2D, p: Piece) {
     if (ELLIPSE_SHADOW.has(p.defId)) {
       const hs = pieceHitSize(p);
-      const wide = hs.w * 0.62;
-      const tall = p.defId === 'fan' ? 150 : Math.max(16, hs.h * 0.5);
+      const wide = hs.w * 0.58;
+      const tall = p.defId === 'fan' ? 140 : Math.max(14, hs.h * 0.46);
       drawSoftShadow(ctx, p.x + SHADOW_OFF_X * 0.8, p.y + SHADOW_OFF_Y * 0.9, wide, tall, 0.26);
       return;
     }
@@ -668,7 +677,7 @@ export class Renderer {
     ctx.save();
     ctx.translate(p.x + SHADOW_OFF_X, p.y + SHADOW_OFF_Y);
     if (p.rot) ctx.rotate(p.rot);
-    ctx.globalAlpha = 0.46;
+    ctx.globalAlpha = 0.4;
     ctx.drawImage(sh.canvas, -sh.w / 2, -sh.h / 2, sh.w, sh.h);
     ctx.restore();
     ctx.globalAlpha = 1;
@@ -855,26 +864,22 @@ export class Renderer {
     }
 
     if (p.defId === 'conveyor') {
-      const offset = (now * 0.07) % 54;
-      const span = 320;
-      ctx.strokeStyle = 'rgba(255,253,248,0.38)';
-      ctx.lineWidth = 3;
-      ctx.lineCap = 'round';
-      for (let i = 0; i < 6; i++) {
-        const x = -160 + ((offset + i * 54) % span);
-        ctx.beginPath();
-        ctx.moveTo(x - 6, -4);
-        ctx.lineTo(x, 1);
-        ctx.lineTo(x - 6, 6);
-        ctx.stroke();
-      }
+      // Reflejo que recorre la cinta (las flechas ya van horneadas).
+      const x = -150 + ((now * 0.11) % 300);
+      const sheen = ctx.createLinearGradient(x - 30, 0, x + 30, 0);
+      sheen.addColorStop(0, 'rgba(255,255,255,0)');
+      sheen.addColorStop(0.5, 'rgba(255,255,255,0.16)');
+      sheen.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = sheen;
+      ctx.fillRect(x - 30, -7, 60, 14);
     }
 
     if (p.defId === 'booster') {
       const pulse = 0.12 + 0.06 * Math.sin(now * 0.006);
       ctx.strokeStyle = rgba(PALETTE.teal, pulse);
       ctx.lineWidth = 2;
-      ctx.strokeRect(-38, -38, 76, 76);
+      this.roundRect(ctx, -45, -45, 90, 90, 22);
+      ctx.stroke();
     }
 
     if (p.defId === 'star' && (!p.disabledUntil || p.disabledUntil < now)) {
@@ -922,16 +927,16 @@ export class Renderer {
     }
 
     if (p.defId === 'fan') {
-      const off = (now * 0.09) % 56;
-      ctx.strokeStyle = rgba(PALETTE.teal, 0.55);
-      ctx.lineWidth = 3;
+      // Corrientes de aire: líneas finas que suben por la columna.
+      const off = (now * 0.06) % 48;
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 2;
       ctx.lineCap = 'round';
       for (let i = -2; i <= 2; i++) {
-        const y = -90 + ((i * 56 + off) % 180);
+        const y = -96 + ((i * 48 + off + 192) % 192);
         ctx.beginPath();
-        ctx.moveTo(-10, y + 8);
-        ctx.lineTo(0, y);
-        ctx.lineTo(10, y + 8);
+        ctx.moveTo(-25, y + 9);
+        ctx.quadraticCurveTo(0, y - 2, 25, y + 9);
         ctx.stroke();
       }
     }
