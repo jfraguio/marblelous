@@ -1180,7 +1180,12 @@ export class Game {
 
   private emitFactoryMarble(p: Piece, now: number) {
     if (this.marbles.length >= 200) return;
-    const type = MARBLE_BY_ID.get(BLUE_MARBLE) ?? MARBLE_TYPES[0];
+    let typeId = this.selectedMarble;
+    if (typeId === 'surprise') {
+      const pool = MARBLE_TYPES.filter((t) => t.id !== 'surprise' && this.owned.has(t.id));
+      typeId = pool.length ? pool[Math.floor(Math.random() * pool.length)].id : BLUE_MARBLE;
+    }
+    const type = MARBLE_BY_ID.get(typeId) ?? MARBLE_BY_ID.get(BLUE_MARBLE) ?? MARBLE_TYPES[0];
     const c = Math.cos(p.rot);
     const s = Math.sin(p.rot);
     const x = p.x + FACTORY_OUTLET.x * c - FACTORY_OUTLET.y * s;
