@@ -63,7 +63,7 @@ export interface Collider {
   uy: number;
 }
 
-export type TriggerKind = 'goal' | 'star' | 'boost' | 'portal' | 'fan' | 'spiral' | 'bubbleLift' | 'magnet' | 'hourglass';
+export type TriggerKind = 'goal' | 'star' | 'boost' | 'portal' | 'fan' | 'spiral' | 'bubbleLift' | 'magnet' | 'hourglass' | 'cannon';
 
 export interface Trigger {
   kind: TriggerKind;

@@ -1,5 +1,5 @@
 import type { Collider, Marble, PhysEvent, Piece, Trigger } from './types';
-import { SPIRAL_DURATION, SPIRAL_ENTRY, buildPiece, getPieceDef, spiralDepth, spiralLocal } from './pieces';
+import { SPIRAL_DURATION, SPIRAL_ENTRY, buildPiece, pieceHitSize, spiralDepth, spiralLocal } from './pieces';
 import { clamp, TAU } from './util';
 
 const CELL = 64;
@@ -476,6 +476,28 @@ export class PhysicsWorld {
           speed: Math.hypot(m.vx, m.vy)
         });
         return;
+      } else if (t.kind === 'cannon') {
+        if (!this.inTriggerRect(m, t)) continue;
+        if (now - m.lastCannon <= 300 && m.lastCannonPiece === t.pieceId) continue;
+        m.vx += t.dx * t.power;
+        m.vy += t.dy * t.power;
+        m.lastCannon = now;
+        m.lastCannonPiece = t.pieceId;
+        m.awake = true;
+        m.sleepTimer = 0;
+        m.contact = 0;
+        m.airTime = 0;
+        this.events.push({
+          type: 'cannon',
+          x: m.x,
+          y: m.y,
+          pieceId: t.pieceId,
+          note: -1,
+          impact: t.power,
+          marbleId: m.id,
+          speed: Math.hypot(m.vx, m.vy)
+        });
+        return;
       } else if (t.kind === 'portal') {
         if (!this.inTriggerCircle(m, t)) continue;
         if (now - m.lastPortalAt < 350) continue;
@@ -559,7 +581,7 @@ export class PhysicsWorld {
   }
 
   private collideStatic(m: Marble, c: Collider, dt: number, now: number) {
-    if (c.bubble && (this.disabled.get(c.pieceId) ?? 0) > now) return;
+    if ((this.disabled.get(c.pieceId) ?? 0) > now) return;
     const p = closestOnSegment(m.x, m.y, c.ax, c.ay, c.bx, c.by);
     let nx = m.x - p.x;
     let ny = m.y - p.y;
@@ -772,8 +794,8 @@ export function contentBounds(pieces: Piece[]): { minX: number; minY: number; ma
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const p of pieces) {
-    const d = getPieceDef(p.defId);
-    const r = Math.max(d.w, d.h) / 2 + 30;
+    const hs = pieceHitSize(p);
+    const r = Math.max(hs.w, hs.h) / 2 + 30;
     minX = Math.min(minX, p.x - r);
     minY = Math.min(minY, p.y - r);
     maxX = Math.max(maxX, p.x + r);

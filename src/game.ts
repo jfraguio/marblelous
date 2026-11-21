@@ -26,9 +26,12 @@ import {
   FACTORY_OUTLET,
   defaultLen,
   getPieceDef,
+  hasMagneticBase,
   makePiece,
+  pieceBaseMount,
   pieceContains,
   pieceHitSize,
+  pieceLength,
   piecePorts
 } from './pieces';
 import type { UI } from './ui';
@@ -436,6 +439,7 @@ export class Game {
   /** Atrae el extremo de una pieza hacia el extremo compatible más cercano. */
   private magnetSnap(p: Piece, silent = false): boolean {
     if (p.defId === 'booster' && this.snapBoosterToTrack(p, silent)) return true;
+    if (hasMagneticBase(p.defId) && this.snapBaseToTrack(p, silent)) return true;
     const ports = piecePorts(p);
     if (!ports.length) return false;
     let best: { d: number; ax: number; ay: number; bx: number; by: number; key: string } | null = null;
@@ -483,6 +487,71 @@ export class Game {
   }
 
   /**
+   * Las bases de la fábrica de burbujas, el ventilador, el cañón y el reloj se
+   * imantan a la cara superior de rampas, cintas y rampas-burbuja.
+   */
+  private snapBaseToTrack(p: Piece, silent: boolean): boolean {
+    const mount = pieceBaseMount(p.defId);
+    if (!mount) return false;
+    // Centro de la suela en coordenadas de mundo (la pieza puede estar girada).
+    const bx = p.x - Math.sin(p.rot) * mount.bottom;
+    const by = p.y + Math.cos(p.rot) * mount.bottom;
+    const localX = bx - p.x;
+    const localY = by - p.y;
+    let best: { d: number; x: number; y: number; pieceId: number } | null = null;
+    for (const q of this.pieces) {
+      if (q.id === p.id) continue;
+      let half = 0;
+      let radius = 0;
+      if (q.defId === 'ramp' || q.defId === 'conveyor') {
+        half = pieceLength(q) / 2;
+        radius = 8;
+      } else if (q.defId === 'bubble') {
+        half = pieceLength(q) / 2;
+        radius = 5;
+      } else {
+        continue;
+      }
+      const c = Math.cos(q.rot);
+      const s = Math.sin(q.rot);
+      const ax = q.x - half * c;
+      const ay = q.y - half * s;
+      const bxp = q.x + half * c;
+      const byp = q.y + half * s;
+      const dx = bxp - ax;
+      const dy = byp - ay;
+      const len2 = dx * dx + dy * dy;
+      if (len2 < 1) continue;
+      let t = ((bx - ax) * dx + (by - ay) * dy) / len2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const px = ax + dx * t;
+      const py = ay + dy * t;
+      const d = Math.hypot(bx - px, by - py);
+      if (d > 72) continue;
+      // Normal superior local de la pista.
+      const nx = s;
+      const ny = -c;
+      const targetX = px + nx * (radius + 0.5);
+      const targetY = py + ny * (radius + 0.5);
+      const tx = targetX - localX;
+      const ty = targetY - localY;
+      if (!best || d < best.d) best = { d, x: tx, y: ty, pieceId: q.id };
+    }
+    if (!best) return false;
+    p.x = best.x;
+    p.y = best.y;
+    const now = performance.now();
+    const key = `${p.id}:base:${best.pieceId}`;
+    if (!silent && (key !== this.lastSnapKey || now - this.lastSnapAt > 260)) {
+      this.lastSnapKey = key;
+      this.lastSnapAt = now;
+      this.audio.clack(this.panForX(p.x));
+      this.spawnBurst(p.x, p.y, '#FFF6D8', 3, 1);
+    }
+    return true;
+  }
+
+  /**
    * Los propulsores se imantan a cualquier punto de una rampa o cinta, no solo
    * a sus extremos, y quedan suspendidos justo encima de la pista.
    */
@@ -496,10 +565,10 @@ export class Game {
         half = q.len / 2;
         radius = 8;
       } else if (q.defId === 'conveyor') {
-        half = 160;
+        half = pieceLength(q) / 2;
         radius = 8;
       } else if (q.defId === 'bubble') {
-        half = 110;
+        half = pieceLength(q) / 2;
         radius = 5;
       } else {
         continue;
@@ -959,6 +1028,7 @@ export class Game {
         }
         if (p) {
           p.disabledUntil = Math.max(p.disabledUntil ?? 0, respawn);
+          this.physics.setPieceDisabled(p.id, respawn);
           if (this.selectedPieceId === p.id) {
             this.selectedPieceId = 0;
             this.ui?.updateSelection();

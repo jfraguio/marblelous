@@ -1,10 +1,13 @@
 import type { DropSummary } from './types';
 import type { Game } from './game';
 import {
+  FUNNEL_WIDTHS,
   MARBLE_BY_ID,
   SHOP_ITEMS,
+  defaultLen,
   getPieceDef,
   pieceHitSize,
+  pieceLength
 } from './pieces';
 import { drawPreview } from './art';
 import { WORLD_THEMES } from './worlds';
@@ -105,6 +108,14 @@ export class UI {
         let next = p.len * 2;
         if (next > 1920) next = 80;
         this.game.setPieceLen(p, next, true, p.len);
+      } else if (p.defId === 'conveyor' || p.defId === 'bubble') {
+        let next = pieceLength(p) * 2;
+        if (next > 1920) next = defaultLen(p.defId);
+        this.game.setPieceLen(p, next, true, pieceLength(p));
+      } else if (p.defId === 'funnel') {
+        const i = FUNNEL_WIDTHS.findIndex((v) => v > pieceLength(p) + 1);
+        const next = i < 0 ? FUNNEL_WIDTHS[0] : FUNNEL_WIDTHS[i];
+        this.game.setPieceLen(p, next, true, pieceLength(p));
       } else if (p.defId === 'portal') {
         const values = [124, 180, 240, 300, 360];
         const i = values.findIndex((v) => v > p.len + 1);
@@ -282,12 +293,20 @@ export class UI {
     }
     this.selection.classList.remove('is-hidden');
     const canRotate = p.defId !== 'balance' && p.defId !== 'electromagnet';
-    const canSize = p.defId === 'ramp' || p.defId === 'portal';
+    const canSize =
+      p.defId === 'ramp' ||
+      p.defId === 'portal' ||
+      p.defId === 'conveyor' ||
+      p.defId === 'bubble' ||
+      p.defId === 'funnel';
     const canMagnet = p.defId === 'electromagnet';
     const canFactory = p.defId === 'marbleFactory';
     const canPower = canMagnet || canFactory;
     this.selRotate.classList.toggle('is-hidden', !canRotate);
     this.selSize.classList.toggle('is-hidden', !canSize);
+    const sizeLabel = p.defId === 'funnel' ? 'Ensanchar embudo' : 'Cambiar longitud';
+    this.selSize.setAttribute('aria-label', sizeLabel);
+    this.selSize.title = sizeLabel;
     this.selPower.classList.toggle('is-hidden', !canPower);
     this.selPower.querySelector('use')?.setAttribute('href', canFactory ? '#i-power' : '#i-magnet');
     const repel = canMagnet && (p.polarity ?? 1) < 0;

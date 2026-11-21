@@ -8,7 +8,7 @@ import type {
   Trigger,
   Vec2
 } from './types';
-import { polylinePoints, TAU } from './util';
+import { clamp, polylinePoints, TAU } from './util';
 
 export const COLORS = ['#3D7EA6', '#D95D39', '#E9B44C', '#4F9D69', '#7D5BA6', '#D26D8C'];
 
@@ -250,6 +250,34 @@ function arcColliders(
   }
 }
 
+/**
+ * Suela de las máquinas magnéticas: dos rampas cortas para que la canica suba
+ * desde la pista y una plataforma superior plana.
+ */
+function addBaseMount(out: Collider[], p: Piece) {
+  const m = pieceBaseMount(p.defId);
+  if (!m) return;
+  const r = 2;
+  // La cuña de subida se prolonga por debajo de la pista: así el extremo
+  // inferior no forma un escalón que frene a la canica. Además se comporta
+  // como una pequeña cinta magnética que ayuda a subirla hasta la base.
+  const drop = 8;
+  const run = m.lip + 50;
+  const lowY = m.bottom + drop;
+  const len = Math.hypot(run, lowY - m.top) || 1;
+  const leftTangent = { x: run / len, y: (m.top - lowY) / len };
+  const rightTangent = { x: -run / len, y: (m.top - lowY) / len };
+  addCap(out, p, -m.halfWidth - run, lowY, -m.halfWidth, m.top, r, 'metal', {
+    conveyor: 340,
+    tangent: leftTangent
+  });
+  addCap(out, p, m.halfWidth, m.top, m.halfWidth + run, lowY, r, 'metal', {
+    conveyor: 340,
+    tangent: rightTangent
+  });
+  addCap(out, p, -m.halfWidth, m.top, m.halfWidth, m.top, r, 'metal');
+}
+
 export const RAMP_CURVE_RADIUS = 100;
 export const RAMP_CURVE_START = P;
 export const RAMP_CURVE_END = 1.5 * P;
@@ -278,6 +306,58 @@ export const FUNNEL_LEFT: Vec2[] = [
   { x: -36, y: 84 }
 ];
 export const FUNNEL_RIGHT: Vec2[] = FUNNEL_LEFT.map((p) => ({ x: -p.x, y: p.y }));
+
+/** Anchura total de la boca del embudo sin extender. */
+export const FUNNEL_TOP_WIDTH = 188;
+/** Anchuras disponibles al pulsar «extender» en el embudo. */
+export const FUNNEL_WIDTHS = [FUNNEL_TOP_WIDTH, 260, 340, 440, 560];
+const FUNNEL_NECK_Y = 42;
+
+/**
+ * Geometría del embudo. Al extenderlo solo se abre la parte alta: el cuello y
+ * la salida inferior conservan su tamaño original.
+ */
+export function funnelLayout(p?: { len: number }): { left: Vec2[]; right: Vec2[] } {
+  const width = p && p.len > 0 ? p.len : FUNNEL_TOP_WIDTH;
+  const k = Math.max(1, width / FUNNEL_TOP_WIDTH);
+  const topY = FUNNEL_LEFT[0].y;
+  const left = FUNNEL_LEFT.map((pt) => {
+    const w = clamp((FUNNEL_NECK_Y - pt.y) / (FUNNEL_NECK_Y - topY), 0, 1);
+    return { x: pt.x * (1 + (k - 1) * w), y: pt.y };
+  });
+  return { left, right: left.map((pt) => ({ x: -pt.x, y: pt.y })) };
+}
+
+/**
+ * Base magnética de las máquinas que se apoyan sobre una rampa. `bottom` es la
+ * altura local de la suela y `lip` el largo de las rampas de subida laterales.
+ */
+export interface PieceBaseMount {
+  halfWidth: number;
+  bottom: number;
+  top: number;
+  lip: number;
+}
+
+const BASE_MOUNTS: Record<string, PieceBaseMount> = {
+  bubbleLift: { halfWidth: 38, bottom: 68, top: 54, lip: 34 },
+  fan: { halfWidth: 52, bottom: 108, top: 88, lip: 42 },
+  cannon: { halfWidth: 40, bottom: 22, top: 6, lip: 40 },
+  hourglass: { halfWidth: 34, bottom: 62, top: 50, lip: 30 }
+};
+
+export function pieceBaseMount(defId: string): PieceBaseMount | null {
+  return BASE_MOUNTS[defId] ?? null;
+}
+
+export function hasMagneticBase(defId: string): boolean {
+  return defId in BASE_MOUNTS;
+}
+
+/** Longitud efectiva de una pieza extensible (con compatibilidad para saves). */
+export function pieceLength(p: Piece): number {
+  return p.len > 0 ? p.len : defaultLen(p.defId);
+}
 
 export const SPIRAL_TURNS = 2.25;
 export const SPIRAL_DURATION = 2.4;
@@ -363,13 +443,14 @@ const defs: PieceDef[] = [
     defaultColor: 0,
     build: (p) => {
       const c: Collider[] = [];
+      const { left, right } = funnelLayout(p);
       const addCurve = (pts: Vec2[]) => {
         for (let i = 0; i < pts.length - 1; i++) {
           addCap(c, p, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, 6, 'brick');
         }
       };
-      addCurve(FUNNEL_LEFT);
-      addCurve(FUNNEL_RIGHT);
+      addCurve(left);
+      addCurve(right);
       return { colliders: c, triggers: [] };
     }
   },
@@ -384,7 +465,8 @@ const defs: PieceDef[] = [
     defaultColor: 0,
     build: (p) => {
       const c: Collider[] = [];
-      addCap(c, p, -160, 0, 160, 0, 8, 'conveyor', {
+      const half = pieceLength(p) / 2;
+      addCap(c, p, -half, 0, half, 0, 8, 'conveyor', {
         conveyor: 220,
         tangent: { x: 1, y: 0 }
       });
@@ -450,14 +532,30 @@ const defs: PieceDef[] = [
     defaultColor: 4,
     build: (p) => {
       const c: Collider[] = [];
-      rectColliders(c, p, 80, 20, 4, 'metal');
-      for (const col of c) {
-        col.cannon = 1;
-        const up = dir(p, 0, -1);
-        col.ux = up.x;
-        col.uy = up.y;
-      }
-      return { colliders: c, triggers: [] };
+      addBaseMount(c, p);
+      const up = dir(p, 0, -1);
+      const m = pieceBaseMount(p.defId)!;
+      const trigger = tx(p, 0, m.top - 20);
+      return {
+        colliders: c,
+        triggers: [
+          {
+            kind: 'cannon',
+            x: trigger.x,
+            y: trigger.y,
+            w: m.halfWidth * 1.7,
+            h: 28,
+            r: 0,
+            rot: p.rot,
+            power: 1800,
+            pieceId: p.id,
+            disabledUntil: 0,
+            dx: up.x,
+            dy: up.y,
+            pairId: 0
+          }
+        ]
+      };
     }
   },
   {
@@ -564,7 +662,8 @@ const defs: PieceDef[] = [
     defaultColor: 0,
     build: (p) => {
       const c: Collider[] = [];
-      addCap(c, p, -110, 0, 110, 0, 5, 'brick', { bubble: true, e: 0.02 });
+      const half = pieceLength(p) / 2;
+      addCap(c, p, -half, 0, half, 0, 5, 'brick', { bubble: true, e: 0.02 });
       return { colliders: c, triggers: [] };
     }
   },
@@ -578,9 +677,11 @@ const defs: PieceDef[] = [
     tintable: false,
     defaultColor: 0,
     build: (p) => {
+      const c: Collider[] = [];
+      addBaseMount(c, p);
       const center = tx(p, 0, 0);
       return {
-        colliders: [],
+        colliders: c,
         triggers: [
           {
             kind: 'bubbleLift',
@@ -649,9 +750,11 @@ const defs: PieceDef[] = [
     tintable: false,
     defaultColor: 0,
     build: (p) => {
+      const c: Collider[] = [];
+      addBaseMount(c, p);
       const up = dir(p, 0, -1);
       return {
-        colliders: [],
+        colliders: c,
         triggers: [
           { kind: 'fan', x: p.x, y: p.y, w: 96, h: 200, r: 0, rot: p.rot, power: 3400, pieceId: p.id, disabledUntil: 0, dx: up.x, dy: up.y, pairId: 0 }
         ]
@@ -688,12 +791,16 @@ const defs: PieceDef[] = [
     h: 132,
     tintable: false,
     defaultColor: 0,
-    build: (p) => ({
-      colliders: [],
-      triggers: [
-        { kind: 'hourglass', x: p.x, y: p.y, w: 0, h: 0, r: 54, rot: p.rot, power: 0, pieceId: p.id, disabledUntil: 0, dx: 0, dy: 0, pairId: 0 }
-      ]
-    })
+    build: (p) => {
+      const c: Collider[] = [];
+      addBaseMount(c, p);
+      return {
+        colliders: c,
+        triggers: [
+          { kind: 'hourglass', x: p.x, y: p.y, w: 0, h: 0, r: 54, rot: p.rot, power: 0, pieceId: p.id, disabledUntil: 0, dx: 0, dy: 0, pairId: 0 }
+        ]
+      };
+    }
   },
   {
     id: 'xylo5',
@@ -728,6 +835,9 @@ export function getPieceDef(id: string): PieceDef {
 
 export function defaultLen(defId: string): number {
   if (defId === 'ramp') return 320;
+  if (defId === 'conveyor') return 320;
+  if (defId === 'bubble') return 220;
+  if (defId === 'funnel') return FUNNEL_TOP_WIDTH;
   if (defId === 'portal') return 124;
   return 0;
 }
@@ -755,6 +865,9 @@ export function buildPiece(p: Piece): { colliders: Collider[]; triggers: Trigger
 export function pieceHitSize(p: Piece): { w: number; h: number } {
   const d = getPieceDef(p.defId);
   if (p.defId === 'ramp') return { w: p.len + 16, h: 28 };
+  if (p.defId === 'conveyor') return { w: pieceLength(p) + 16, h: 30 };
+  if (p.defId === 'bubble') return { w: pieceLength(p) + 20, h: 28 };
+  if (p.defId === 'funnel') return { w: Math.max(d.w, pieceLength(p) + 20), h: d.h };
   if (p.defId === 'portal') return { w: p.len + 84, h: 120 };
   return { w: d.w, h: d.h };
 }
@@ -774,11 +887,13 @@ export function piecePorts(p: Piece): PiecePort[] {
     add(-p.len / 2, 0, -1, 0);
     add(p.len / 2, 0, 1, 0);
   } else if (p.defId === 'bubble') {
-    add(-110, 0, -1, 0);
-    add(110, 0, 1, 0);
+    const half = pieceLength(p) / 2;
+    add(-half, 0, -1, 0);
+    add(half, 0, 1, 0);
   } else if (p.defId === 'conveyor') {
-    add(-160, 0, -1, 0);
-    add(160, 0, 1, 0);
+    const half = pieceLength(p) / 2;
+    add(-half, 0, -1, 0);
+    add(half, 0, 1, 0);
   } else if (p.defId === 'rampCurve') {
     const r = RAMP_CURVE_RADIUS;
     const a = { x: Math.cos(RAMP_CURVE_START) * r, y: Math.sin(RAMP_CURVE_START) * r };
@@ -810,8 +925,9 @@ export function piecePorts(p: Piece): PiecePort[] {
     add(a.x, a.y, -ta.x / la, -ta.y / la);
     add(b.x, b.y, tb.x / lb, tb.y / lb);
   } else if (p.defId === 'funnel') {
-    add(FUNNEL_LEFT[0].x, FUNNEL_LEFT[0].y, 0, -1);
-    add(FUNNEL_RIGHT[0].x, FUNNEL_RIGHT[0].y, 0, -1);
+    const { left, right } = funnelLayout(p);
+    add(left[0].x, left[0].y, 0, -1);
+    add(right[0].x, right[0].y, 0, -1);
   }
   return out;
 }

@@ -19,6 +19,7 @@ import {
   FACTORY_OUTLET,
   getPieceDef,
   pieceHitSize,
+  pieceLength,
   spiralLocal,
   xyloLayout
 } from './pieces';
@@ -865,7 +866,9 @@ export class Renderer {
 
     if (p.defId === 'conveyor') {
       // Reflejo que recorre la cinta (las flechas ya van horneadas).
-      const x = -150 + ((now * 0.11) % 300);
+      const half = pieceLength(p) / 2;
+      const span = Math.max(20, half * 2 - 20);
+      const x = -half + 10 + ((now * 0.11) % span);
       const sheen = ctx.createLinearGradient(x - 30, 0, x + 30, 0);
       sheen.addColorStop(0, 'rgba(255,255,255,0)');
       sheen.addColorStop(0.5, 'rgba(255,255,255,0.16)');

@@ -2,14 +2,14 @@ import type { MarbleType, Piece } from './types';
 import {
   COLORS,
   FACTORY_LAMP,
-  FUNNEL_LEFT,
-  FUNNEL_RIGHT,
   MARBLE_TYPES,
   NOTE_COLORS,
   PALETTE,
   RAMP_CURVE_END,
   RAMP_CURVE_RADIUS,
   RAMP_CURVE_START,
+  funnelLayout,
+  pieceLength,
   spiralDepth,
   spiralLocal,
   defaultLen,
@@ -290,7 +290,7 @@ function spriteDims(p: Piece): { w: number; h: number } {
     case 'rampCurve':
       return { w: RAMP_CURVE_RADIUS * 2 + 18, h: RAMP_CURVE_RADIUS * 2 + 18 };
     case 'funnel':
-      return { w: 220, h: 200 };
+      return { w: pieceLength(p) + 34, h: 200 };
     case 'xylo5': {
       const n = 5;
       const l = xyloLayout(n);
@@ -299,7 +299,7 @@ function spriteDims(p: Piece): { w: number; h: number } {
     case 'spiral':
       return { w: 300, h: 330 };
     case 'bubble':
-      return { w: 250, h: 40 };
+      return { w: pieceLength(p) + 30, h: 40 };
     case 'bubbleLift':
       return { w: 156, h: 196 };
     case 'marbleFactory':
@@ -319,7 +319,7 @@ function spriteDims(p: Piece): { w: number; h: number } {
     case 'cannon':
       return { w: 104, h: 70 };
     case 'conveyor':
-      return { w: 336, h: 28 };
+      return { w: pieceLength(p) + 16, h: 28 };
     case 'balance':
       return { w: 300, h: 140 };
     case 'electromagnet':
@@ -481,10 +481,12 @@ function buildPieceSprite(p: Piece, ww: number, hh: number, scale = spriteScale)
       ctx.arc(0, 0, 19, Math.PI * 0.95, Math.PI * 1.55);
       ctx.stroke();
     } else if (p.defId === 'conveyor') {
-      fillPath(ctx, (c2) => rr(c2, -160, -13, 320, 26, 13), bodyGrad(ctx, '#3C5A78', -13, 13), 2.8);
-      fillPath(ctx, (c2) => rr(c2, -149, -7.5, 298, 15, 7.5), '#16273B', 1.8);
+      const L = Math.max(80, pieceLength(p));
+      const half = L / 2;
+      fillPath(ctx, (c2) => rr(c2, -half, -13, L, 26, 13), bodyGrad(ctx, '#3C5A78', -13, 13), 2.8);
+      fillPath(ctx, (c2) => rr(c2, -half + 11, -7.5, L - 22, 15, 7.5), '#16273B', 1.8);
       // Rodillos cromados.
-      for (const x of [-150, 150]) {
+      for (const x of [-half + 10, half - 10]) {
         fillPath(ctx, (c2) => {
           c2.arc(x, 0, 8.4, 0, TAU);
         }, chromeGrad(ctx, -8, 8), 2.2);
@@ -493,12 +495,15 @@ function buildPieceSprite(p: Piece, ww: number, hh: number, scale = spriteScale)
         ctx.arc(x, 0, 2.6, 0, TAU);
         ctx.fill();
       }
-      // Flechas de la cinta.
+      // Flechas de la cinta, repartidas a lo largo de la longitud actual.
+      const n = Math.max(2, Math.round((L - 70) / 52));
+      const stepArrow = (L - 64) / (n - 1);
       ctx.strokeStyle = 'rgba(255,255,255,0.9)';
       ctx.lineWidth = 3;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      for (const x of [-74, -27, 20, 67]) {
+      for (let i = 0; i < n; i++) {
+        const x = -half + 32 + i * stepArrow;
         ctx.beginPath();
         ctx.moveTo(x - 6, -3.8);
         ctx.lineTo(x + 3, 0);
@@ -508,12 +513,12 @@ function buildPieceSprite(p: Piece, ww: number, hh: number, scale = spriteScale)
       ctx.strokeStyle = 'rgba(255,255,255,0.28)';
       ctx.lineWidth = 1.6;
       ctx.beginPath();
-      ctx.moveTo(-138, -9.4);
-      ctx.lineTo(138, -9.4);
+      ctx.moveTo(-half + 22, -9.4);
+      ctx.lineTo(half - 22, -9.4);
       ctx.stroke();
     } else if (p.defId === 'funnel') {
-      const L = FUNNEL_LEFT;
-      const R = FUNNEL_RIGHT;
+      const { left: L, right: R } = funnelLayout(p);
+      const topHalf = -L[0].x;
       const body = (c2: CanvasRenderingContext2D) => {
         c2.moveTo(L[0].x, L[0].y);
         for (let i = 1; i < L.length; i++) c2.lineTo(L[i].x, L[i].y);
@@ -560,7 +565,7 @@ function buildPieceSprite(p: Piece, ww: number, hh: number, scale = spriteScale)
       ctx.fill();
       // Boca superior.
       fillPath(ctx, (c2) => {
-        c2.ellipse(0, -80, 96, 13, 0, 0, TAU);
+        c2.ellipse(0, -80, topHalf + 2, 13, 0, 0, TAU);
       }, (() => {
         const g = ctx.createLinearGradient(0, -93, 0, -67);
         g.addColorStop(0, '#F4FCFF');
@@ -570,12 +575,12 @@ function buildPieceSprite(p: Piece, ww: number, hh: number, scale = spriteScale)
       })(), 2.8);
       ctx.fillStyle = '#173A5E';
       ctx.beginPath();
-      ctx.ellipse(0, -78, 87, 8, 0, 0, TAU);
+      ctx.ellipse(0, -78, Math.max(24, topHalf - 7), 8, 0, 0, TAU);
       ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,0.75)';
       ctx.lineWidth = 2.2;
       ctx.beginPath();
-      ctx.ellipse(-6, -83, 74, 5, -0.03, Math.PI * 1.06, Math.PI * 1.94);
+      ctx.ellipse(-6, -83, Math.max(20, topHalf - 20), 5, -0.03, Math.PI * 1.06, Math.PI * 1.94);
       ctx.stroke();
       // Cuello cromado y salida.
       chromeCap(ctx, -27, 74, 54, 19, 8);
@@ -894,6 +899,9 @@ function buildPieceSprite(p: Piece, ww: number, hh: number, scale = spriteScale)
       ctx.arc(out.x, out.y + 4, 5.6, 0, TAU);
       ctx.fill();
     } else if (p.defId === 'bubble') {
+      const sx = Math.max(0.5, pieceLength(p) / 220);
+      ctx.save();
+      ctx.scale(sx, 1);
       const shape = (c2: CanvasRenderingContext2D) => {
         c2.moveTo(-112, -6);
         c2.lineTo(-86, -9);
@@ -985,6 +993,7 @@ function buildPieceSprite(p: Piece, ww: number, hh: number, scale = spriteScale)
         ctx.arc(x, y, 0.9 + (i % 2), 0, TAU);
         ctx.fill();
       }
+      ctx.restore();
     } else if (p.defId === 'bubbleLift') {
       // Base cromada.
       chromeCap(ctx, -38, 50, 76, 18, 9);
