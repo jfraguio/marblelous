@@ -3,11 +3,14 @@ import { SPIRAL_DURATION, SPIRAL_ENTRY, buildPiece, pieceHitSize, spiralDepth, s
 import { clamp, TAU } from './util';
 
 const CELL = 64;
+const TRIGGER_CELL = 128;
+const MARBLE_CELL = 72;
 const MAX_SPEED = 3400;
 const GRAVITY = 1800;
 const SLOP = 0.5;
 const BUBBLE_RISE = -190;
 const BUBBLE_LIFE = 8;
+const TRIGGER_PAD = 40;
 
 interface SpiralInfo {
   pieceId: number;
@@ -38,6 +41,11 @@ export class PhysicsWorld {
   spirals: SpiralInfo[] = [];
   events: PhysEvent[] = [];
   private grid = new Map<number, number[]>();
+  private triggerGrid = new Map<number, number[]>();
+  private triggerQuery: Trigger[] = [];
+  private marbleGrid = new Map<number, number[]>();
+  private marbleCells: number[] = [];
+  private marblePool: number[][] = [];
   private disabled = new Map<number, number>();
   private visited = new Uint32Array(0);
   private stamp = 0;
@@ -91,6 +99,27 @@ export class PhysicsWorld {
     if (this.visited.length < this.colliders.length) {
       this.visited = new Uint32Array(Math.max(64, this.colliders.length + 128));
     }
+    this.triggerGrid.clear();
+    for (let i = 0; i < this.triggers.length; i++) {
+      const t = this.triggers[i];
+      const reach =
+        (t.w > 0 || t.h > 0 ? Math.hypot(t.w / 2, t.h / 2) : t.r) + TRIGGER_PAD;
+      const x0 = Math.floor((t.x - reach) / TRIGGER_CELL);
+      const x1 = Math.floor((t.x + reach) / TRIGGER_CELL);
+      const y0 = Math.floor((t.y - reach) / TRIGGER_CELL);
+      const y1 = Math.floor((t.y + reach) / TRIGGER_CELL);
+      for (let cx = x0; cx <= x1; cx++) {
+        for (let cy = y0; cy <= y1; cy++) {
+          const key = cellKey(cx, cy);
+          let arr = this.triggerGrid.get(key);
+          if (!arr) {
+            arr = [];
+            this.triggerGrid.set(key, arr);
+          }
+          arr.push(i);
+        }
+      }
+    }
     this.stamp = 0;
   }
 
@@ -114,6 +143,19 @@ export class PhysicsWorld {
 
   clearDisabled() {
     this.disabled.clear();
+  }
+
+  /** Triggers cuya caja puede contener a la canica (consulta de una celda). */
+  private nearbyTriggers(m: Marble): Trigger[] {
+    const out = this.triggerQuery;
+    out.length = 0;
+    if (this.triggers.length === 0) return out;
+    const arr = this.triggerGrid.get(
+      cellKey(Math.floor(m.x / TRIGGER_CELL), Math.floor(m.y / TRIGGER_CELL))
+    );
+    if (!arr) return out;
+    for (let i = 0; i < arr.length; i++) out.push(this.triggers[arr[i]]);
+    return out;
   }
 
   update(marbles: Marble[], dt: number, now: number) {
@@ -142,7 +184,7 @@ export class PhysicsWorld {
 
     for (let step = 0; step < steps; step++) {
       m.vy += GRAVITY * h;
-      this.applyFields(m, h, now);
+      if (this.triggers.length > 0) this.applyFields(m, h, now);
       const sp = Math.hypot(m.vx, m.vy);
       if (sp > MAX_SPEED) {
         const k = MAX_SPEED / sp;
@@ -175,7 +217,7 @@ export class PhysicsWorld {
       m.airTime += dt;
     }
 
-    this.checkTriggers(m, now);
+    if (this.triggers.length > 0) this.checkTriggers(m, now);
 
     const sp2 = Math.hypot(m.vx, m.vy);
     if (sp2 < 22 && m.contact) {
@@ -260,8 +302,8 @@ export class PhysicsWorld {
     m.airTime = 0;
     m.sleepTimer = 0;
     m.awake = true;
-    this.applyFields(m, dt, now);
-    this.checkTriggers(m, now);
+    if (this.triggers.length > 0) this.applyFields(m, dt, now);
+    if (this.triggers.length > 0) this.checkTriggers(m, now);
     if (m.bubbled && m.bubbleT > 0.3 && this.bubbleTouchesSolid(m)) this.popBubble(m);
     if (m.bubbled && m.bubbleT > BUBBLE_LIFE) this.popBubble(m);
   }
@@ -303,7 +345,9 @@ export class PhysicsWorld {
   }
 
   private applyFields(m: Marble, h: number, now: number) {
-    for (const t of this.triggers) {
+    const triggers = this.nearbyTriggers(m);
+    for (let ti = 0; ti < triggers.length; ti++) {
+      const t = triggers[ti];
       if (m.bubbled) {
         if (t.kind === 'fan' && this.inTriggerRect(m, t)) {
           m.vx += t.dx * t.power * h * 0.45;
@@ -374,7 +418,9 @@ export class PhysicsWorld {
 
   private checkTriggers(m: Marble, now: number) {
     if (m.bubbled) return;
-    for (const t of this.triggers) {
+    const triggers = this.nearbyTriggers(m);
+    for (let ti = 0; ti < triggers.length; ti++) {
+      const t = triggers[ti];
       if (t.disabledUntil > now) continue;
       if (t.kind === 'goal') {
         if (this.inTriggerRect(m, t) || this.inTriggerCircle(m, t)) {
@@ -686,100 +732,159 @@ export class PhysicsWorld {
     }
   }
 
+  private collideMarblePair(a: Marble, b: Marble, now: number): boolean {
+    if (!a.alive || !b.alive || a.bubbled || b.bubbled) return false;
+    if (!a.awake && !b.awake) return true;
+    let dx = b.x - a.x;
+    let dy = b.y - a.y;
+    const min = a.r + b.r;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= min * min) return true;
+    let d = Math.sqrt(d2);
+    if (d < 0.0001) {
+      dx = 0.01;
+      dy = 0;
+      d = 0.01;
+    }
+    const nx = dx / d;
+    const ny = dy / d;
+    const pen = min - d;
+    const invSum = a.invMass + b.invMass;
+    if (invSum <= 0) return true;
+    a.x -= nx * pen * (a.invMass / invSum) * 0.85;
+    a.y -= ny * pen * (a.invMass / invSum) * 0.85;
+    b.x += nx * pen * (b.invMass / invSum) * 0.85;
+    b.y += ny * pen * (b.invMass / invSum) * 0.85;
+    if (!a.awake) {
+      a.awake = true;
+      a.sleepTimer = 0;
+    }
+    if (!b.awake) {
+      b.awake = true;
+      b.sleepTimer = 0;
+    }
+    const rvx = b.vx - a.vx;
+    const rvy = b.vy - a.vy;
+    const vn = rvx * nx + rvy * ny;
+    if (vn < 0) {
+      const e = Math.min(a.e, b.e);
+      const jimp = (-(1 + e) * vn) / invSum;
+      a.vx -= nx * jimp * a.invMass;
+      a.vy -= ny * jimp * a.invMass;
+      b.vx += nx * jimp * b.invMass;
+      b.vy += ny * jimp * b.invMass;
+      const tvx = rvx - nx * vn;
+      const tvy = rvy - ny * vn;
+      const tv = Math.hypot(tvx, tvy);
+      if (tv > 0.01) {
+        const f = Math.min(tv, 0.08 * Math.abs(vn));
+        a.vx += (tvx / tv) * f * 0.5;
+        a.vy += (tvy / tv) * f * 0.5;
+        b.vx -= (tvx / tv) * f * 0.5;
+        b.vy -= (tvy / tv) * f * 0.5;
+      }
+      if (-vn > 80) {
+        this.events.push({
+          type: 'marble',
+          x: (a.x + b.x) / 2,
+          y: (a.y + b.y) / 2,
+          pieceId: 0,
+          note: -1,
+          impact: -vn,
+          marbleId: a.id,
+          speed: Math.hypot(rvx, rvy)
+        });
+      }
+    }
+    if (a.typeId === 'rainbow' || b.typeId === 'rainbow') {
+      const rolls: Array<[Marble, Marble]> = [];
+      if (a.typeId === 'rainbow') rolls.push([a, b]);
+      if (b.typeId === 'rainbow') rolls.push([b, a]);
+      for (const [src, dst] of rolls) {
+        if (!src.alive || !dst.alive) continue;
+        if (now - src.lastRainbowAt < 400) continue;
+        src.lastRainbowAt = now;
+        if (Math.random() >= 0.1) continue;
+        // La arcoíris hace estallar a la otra canica (de cualquier tipo).
+        dst.alive = false;
+        this.events.push({
+          type: 'rainbow',
+          x: dst.x,
+          y: dst.y,
+          pieceId: 0,
+          note: -1,
+          impact: 0,
+          marbleId: dst.id,
+          speed: Math.hypot(a.vx - b.vx, a.vy - b.vy)
+        });
+        break;
+      }
+      if (!a.alive || !b.alive) return false;
+    }
+    return true;
+  }
+
+  /** Rejilla de canicas reutilizada para evitar el O(n²) en lotes grandes. */
+  private rebuildMarbleGrid(marbles: Marble[]) {
+    const pool = this.marblePool;
+    for (let i = 0; i < this.marbleCells.length; i++) {
+      const key = this.marbleCells[i];
+      const arr = this.marbleGrid.get(key);
+      if (!arr) continue;
+      arr.length = 0;
+      this.marbleGrid.delete(key);
+      pool.push(arr);
+    }
+    this.marbleCells.length = 0;
+    for (let i = 0; i < marbles.length; i++) {
+      const m = marbles[i];
+      if (!m.alive || m.bubbled) continue;
+      const key = cellKey(Math.floor(m.x / MARBLE_CELL), Math.floor(m.y / MARBLE_CELL));
+      let arr = this.marbleGrid.get(key);
+      if (!arr) {
+        arr = pool.pop() ?? [];
+        this.marbleGrid.set(key, arr);
+        this.marbleCells.push(key);
+      }
+      arr.push(i);
+    }
+  }
+
   private resolveMarbles(marbles: Marble[], now: number) {
     const n = marbles.length;
+    if (n < 32) {
+      for (let i = 0; i < n; i++) {
+        const a = marbles[i];
+        if (!a.alive || a.bubbled) continue;
+        for (let j = i + 1; j < n; j++) {
+          const b = marbles[j];
+          if (!b.alive || b.bubbled) continue;
+          if (!this.collideMarblePair(a, b, now)) break;
+        }
+      }
+      return;
+    }
+    this.rebuildMarbleGrid(marbles);
     for (let i = 0; i < n; i++) {
       const a = marbles[i];
       if (!a.alive || a.bubbled) continue;
-      for (let j = i + 1; j < n; j++) {
-        const b = marbles[j];
-        if (!b.alive || b.bubbled) continue;
-        if (!a.awake && !b.awake) continue;
-        let dx = b.x - a.x;
-        let dy = b.y - a.y;
-        const min = a.r + b.r;
-        const d2 = dx * dx + dy * dy;
-        if (d2 >= min * min) continue;
-        let d = Math.sqrt(d2);
-        if (d < 0.0001) {
-          dx = 0.01;
-          dy = 0;
-          d = 0.01;
-        }
-        const nx = dx / d;
-        const ny = dy / d;
-        const pen = min - d;
-        const invSum = a.invMass + b.invMass;
-        if (invSum <= 0) continue;
-        a.x -= nx * pen * (a.invMass / invSum) * 0.85;
-        a.y -= ny * pen * (a.invMass / invSum) * 0.85;
-        b.x += nx * pen * (b.invMass / invSum) * 0.85;
-        b.y += ny * pen * (b.invMass / invSum) * 0.85;
-        if (!a.awake) {
-          a.awake = true;
-          a.sleepTimer = 0;
-        }
-        if (!b.awake) {
-          b.awake = true;
-          b.sleepTimer = 0;
-        }
-        const rvx = b.vx - a.vx;
-        const rvy = b.vy - a.vy;
-        const vn = rvx * nx + rvy * ny;
-        if (vn < 0) {
-          const e = Math.min(a.e, b.e);
-          const jimp = (-(1 + e) * vn) / invSum;
-          a.vx -= nx * jimp * a.invMass;
-          a.vy -= ny * jimp * a.invMass;
-          b.vx += nx * jimp * b.invMass;
-          b.vy += ny * jimp * b.invMass;
-          const tvx = rvx - nx * vn;
-          const tvy = rvy - ny * vn;
-          const tv = Math.hypot(tvx, tvy);
-          if (tv > 0.01) {
-            const f = Math.min(tv, 0.08 * Math.abs(vn));
-            a.vx += (tvx / tv) * f * 0.5;
-            a.vy += (tvy / tv) * f * 0.5;
-            b.vx -= (tvx / tv) * f * 0.5;
-            b.vy -= (tvy / tv) * f * 0.5;
+      const cx = Math.floor(a.x / MARBLE_CELL);
+      const cy = Math.floor(a.y / MARBLE_CELL);
+      let stop = false;
+      for (let ox = -1; ox <= 1 && !stop; ox++) {
+        for (let oy = -1; oy <= 1 && !stop; oy++) {
+          const arr = this.marbleGrid.get(cellKey(cx + ox, cy + oy));
+          if (!arr) continue;
+          for (let k = 0; k < arr.length; k++) {
+            const b = marbles[arr[k]];
+            // Solo procesamos cada pareja una vez y en una sola dirección.
+            if (b.id <= a.id) continue;
+            if (!b.alive || b.bubbled) continue;
+            if (!this.collideMarblePair(a, b, now)) {
+              stop = true;
+              break;
+            }
           }
-          if (-vn > 80) {
-            this.events.push({
-              type: 'marble',
-              x: (a.x + b.x) / 2,
-              y: (a.y + b.y) / 2,
-              pieceId: 0,
-              note: -1,
-              impact: -vn,
-              marbleId: a.id,
-              speed: Math.hypot(rvx, rvy)
-            });
-          }
-        }
-        if (a.typeId === 'rainbow' || b.typeId === 'rainbow') {
-          const rolls: Array<[Marble, Marble]> = [];
-          if (a.typeId === 'rainbow') rolls.push([a, b]);
-          if (b.typeId === 'rainbow') rolls.push([b, a]);
-          for (const [src, dst] of rolls) {
-            if (!src.alive || !dst.alive) continue;
-            if (now - src.lastRainbowAt < 400) continue;
-            src.lastRainbowAt = now;
-            if (Math.random() >= 0.1) continue;
-            // La arcoíris hace estallar a la otra canica (de cualquier tipo).
-            dst.alive = false;
-            this.events.push({
-              type: 'rainbow',
-              x: dst.x,
-              y: dst.y,
-              pieceId: 0,
-              note: -1,
-              impact: 0,
-              marbleId: dst.id,
-              speed: Math.hypot(a.vx - b.vx, a.vy - b.vy)
-            });
-            break;
-          }
-          if (!a.alive || !b.alive) break;
         }
       }
     }

@@ -84,8 +84,11 @@ export function icon(name: string, cls = 'ic'): string {
   return `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
 }
 
+let reducedMotion: MediaQueryList | null = null;
+
 export function prefersReducedMotion(): boolean {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reducedMotion) reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  return reducedMotion.matches;
 }
 
 export function isEditableTarget(target: EventTarget | null): boolean {

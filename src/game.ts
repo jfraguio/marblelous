@@ -137,6 +137,11 @@ export class Game {
   private lastSnapAt = 0;
   private dragStartRot = 0;
   private viewInitialized = false;
+  private physicsDirty = false;
+  private hudDirty = false;
+  private saveIdlePending = false;
+  /** Cambia cuando el orden por profundidad de las piezas puede haber cambiado. */
+  pieceRevision = 0;
   fresh = false;
 
   constructor(canvas: HTMLCanvasElement, audio: AudioEngine) {
@@ -144,7 +149,7 @@ export class Game {
     this.audio = audio;
     this.load();
     this.loadSnapshots();
-    this.physics.rebuild(this.pieces);
+    this.rebuildPhysics();
     this.applySettings();
     this.bindVisibility();
   }
@@ -154,6 +159,7 @@ export class Game {
   }
 
   get selectedPiece(): Piece | null {
+    if (!this.selectedPieceId) return null;
     return this.pieces.find((p) => p.id === this.selectedPieceId) ?? null;
   }
 
@@ -176,6 +182,19 @@ export class Game {
     };
   }
 
+  private rebuildPhysics() {
+    this.physicsDirty = false;
+    this.physics.rebuild(this.pieces);
+  }
+
+  private requestHud() {
+    this.hudDirty = true;
+  }
+
+  private bumpPieces() {
+    this.pieceRevision++;
+  }
+
   start() {
     this.last = performance.now();
     requestAnimationFrame(this.frame);
@@ -185,6 +204,10 @@ export class Game {
     const raw = Math.min((now - this.last) / 1000, 0.1);
     this.last = now;
     if (!this.isPaused) {
+      if (this.physicsDirty) {
+        this.physicsDirty = false;
+        this.rebuildPhysics();
+      }
       this.updateTimeScale(now);
       this.accumulator += raw;
       let steps = 0;
@@ -205,10 +228,14 @@ export class Game {
       this.updateDrop(now);
       this.updateRecords(now);
       this.maybeSave(now);
+      if (this.hudDirty) {
+        this.hudDirty = false;
+        this.ui?.refreshHud();
+      }
+      this.alpha = this.accumulator / FIXED;
+      this.renderer?.render(this.alpha, now);
+      this.ui?.tick(now);
     }
-    this.alpha = this.accumulator / FIXED;
-    this.renderer?.render(this.alpha, now);
-    this.ui?.tick(now);
     requestAnimationFrame(this.frame);
   };
 
@@ -390,7 +417,8 @@ export class Game {
     if (getPieceDef(defId).tintable) p.color = Math.floor(Math.random() * COLORS.length);
     if (commit) this.magnetSnap(p);
     this.pieces.push(p);
-    this.physics.rebuild(this.pieces);
+    this.bumpPieces();
+    this.rebuildPhysics();
     if (commit) {
       this.history.push({ type: 'add', piece: p });
       this.history = this.history.slice(-60);
@@ -401,7 +429,7 @@ export class Game {
       this.spawnBurst(x, y, PALETTE.blue, 5, 0);
     }
     this.selectPiece(p.id);
-    this.ui?.refreshHud();
+    this.requestHud();
     return p;
   }
 
@@ -409,18 +437,19 @@ export class Game {
     const i = this.pieces.findIndex((p) => p.id === id);
     if (i < 0) return;
     const [p] = this.pieces.splice(i, 1);
+    this.bumpPieces();
     this.history.push({ type: 'remove', piece: p });
     this.history = this.history.slice(-60);
     this.redoStack.length = 0;
     this.selectedPieceId = 0;
-    this.physics.rebuild(this.pieces);
+    this.rebuildPhysics();
     this.wakeMarbles();
     this.audio.ui();
     this.spawnBurst(p.x, p.y, PALETTE.muted, 5, 0);
     this.dirty = true;
     this.requestSave();
     this.ui?.updateSelection();
-    this.ui?.refreshHud();
+    this.requestHud();
   }
 
   beginMove(p: Piece) {
@@ -432,7 +461,8 @@ export class Game {
     p.x = Math.round(x / 20) * 20;
     p.y = Math.round(y / 20) * 20;
     this.magnetSnap(p);
-    this.physics.rebuild(this.pieces);
+    this.physicsDirty = true;
+    this.bumpPieces();
     this.wakeMarbles();
   }
 
@@ -627,7 +657,7 @@ export class Game {
 
   setPieceRot(p: Piece, rot: number, commit = false, from = 0) {
     p.rot = rot;
-    this.physics.rebuild(this.pieces);
+    this.physicsDirty = true;
     this.wakeMarbles();
     if (commit && Math.abs(rot - from) > 0.001) {
       this.history.push({ type: 'rotate', id: p.id, from, to: rot });
@@ -640,7 +670,7 @@ export class Game {
 
   setPieceLen(p: Piece, len: number, commit = false, from = 0) {
     p.len = len;
-    this.physics.rebuild(this.pieces);
+    this.rebuildPhysics();
     this.wakeMarbles();
     if (commit && Math.abs(len - from) > 0.001) {
       this.history.push({ type: 'size', id: p.id, from, to: len });
@@ -713,7 +743,7 @@ export class Game {
     const pan = this.panForX(p.x);
     if (p.defId === 'electromagnet') {
       p.polarity = (p.polarity ?? 1) > 0 ? -1 : 1;
-      this.physics.rebuild(this.pieces);
+      this.rebuildPhysics();
       this.wakeMarbles();
       this.audio.ui();
       this.audio.impact('metal', p.polarity > 0 ? 460 : 320, pan);
@@ -730,7 +760,7 @@ export class Game {
     this.dirty = true;
     this.requestSave();
     this.ui?.updateSelection();
-    this.ui?.refreshHud();
+    this.requestHud();
   }
 
   duplicatePiece(p: Piece): Piece | null {
@@ -761,7 +791,8 @@ export class Game {
     };
     this.pieces.push(clone);
     this.magnetSnap(clone, true);
-    this.physics.rebuild(this.pieces);
+    this.bumpPieces();
+    this.rebuildPhysics();
     this.audio.clack(this.panForX(clone.x));
     this.history.push({ type: 'add', piece: clone });
     this.history = this.history.slice(-60);
@@ -771,7 +802,7 @@ export class Game {
     this.spawnBurst(clone.x, clone.y, PALETTE.yellow, 6, 0);
     this.dirty = true;
     this.requestSave();
-    this.ui?.refreshHud();
+    this.requestHud();
     return clone;
   }
 
@@ -782,6 +813,7 @@ export class Game {
     this.history = this.history.slice(-60);
     this.redoStack.length = 0;
     this.pieces = [];
+    this.bumpPieces();
     this.worlds[this.activeWorld].pieces = this.pieces;
     this.marbles = [];
     this.particles = [];
@@ -793,7 +825,7 @@ export class Game {
     this.timeScale = 1;
     this.slowUntil = 0;
     document.body.classList.remove('armed');
-    this.physics.rebuild(this.pieces);
+    this.rebuildPhysics();
     this.physics.clearDisabled();
     this.audio.impact('brick', 300, 0);
     this.spawnBurst(this.camera.x, this.camera.y, PALETTE.muted, 12, 0);
@@ -834,7 +866,7 @@ export class Game {
     this.slowUntil = 0;
     this.dropActive = false;
     document.body.classList.remove('armed');
-    this.physics.rebuild(this.pieces);
+    this.rebuildPhysics();
     this.physics.clearDisabled();
     this.dirty = true;
     this.save();
@@ -872,7 +904,7 @@ export class Game {
     this.dirty = true;
     this.requestSave();
     this.audio.ui();
-    this.ui?.refreshHud();
+    this.requestHud();
   }
 
   redo() {
@@ -883,7 +915,7 @@ export class Game {
     this.dirty = true;
     this.requestSave();
     this.audio.ui();
-    this.ui?.refreshHud();
+    this.requestHud();
   }
 
   private applyHistory(h: History, undo: boolean) {
@@ -916,8 +948,9 @@ export class Game {
       this.pieces = undo ? h.pieces : [];
     }
     this.selectedPieceId = 0;
+    this.bumpPieces();
     this.worlds[this.activeWorld].pieces = this.pieces;
-    this.physics.rebuild(this.pieces);
+    this.rebuildPhysics();
     this.wakeMarbles();
     this.ui?.updateSelection();
     this.ui?.refreshTray();
@@ -1187,7 +1220,7 @@ export class Game {
     this.records.combo = Math.max(this.records.combo, this.comboMultiplier);
     this.spawnPopup(x, y - 14, `+${pts}`);
     this.dirty = true;
-    this.ui?.refreshHud();
+    this.requestHud();
   }
 
   private updateRecords(now: number) {
@@ -1212,11 +1245,11 @@ export class Game {
     if (this.dropStats.maxSpeed < max) this.dropStats.maxSpeed = max;
     if (now - this.comboAt > 2500 && this.comboChain !== 0) {
       this.comboChain = 0;
-      this.ui?.refreshHud();
+      this.requestHud();
     }
     if (now - this.lastUiSave > 500) {
       this.lastUiSave = now;
-      this.ui?.refreshHud();
+      this.requestHud();
     }
   }
 
@@ -1225,7 +1258,7 @@ export class Game {
     this.lifetime += points;
     this.dropStats.sparks += points;
     this.spawnPopup(x, y - 16, `+${points}`);
-    this.ui?.refreshHud();
+    this.requestHud();
     this.dirty = true;
     this.requestSave();
   }
@@ -1461,7 +1494,25 @@ export class Game {
 
   private maybeSave(now: number) {
     if (!this.dirty) return;
-    if (now - this.lastSave > 900) this.save();
+    if (now - this.lastSave < 2500) return;
+    if (this.saveIdlePending) return;
+    const idle = (
+      window as unknown as {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      }
+    ).requestIdleCallback;
+    if (idle) {
+      this.saveIdlePending = true;
+      idle(
+        () => {
+          this.saveIdlePending = false;
+          if (this.dirty) this.save();
+        },
+        { timeout: 1500 }
+      );
+      return;
+    }
+    this.save();
   }
 
   requestSave() {
@@ -1640,6 +1691,7 @@ export class Game {
     const active = this.worlds[this.activeWorld];
     const source = active.pieces.length ? active : this.worlds.find((w) => w.pieces.length) ?? active;
     this.pieces = source.pieces;
+    this.bumpPieces();
     this.camera = source.camera ?? { x: 0, y: 0, zoom: 1 };
     this.records = source.records ?? {
       combo: 1,

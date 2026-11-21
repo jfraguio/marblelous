@@ -44,6 +44,11 @@ export class UI {
   private longPressId = '';
   private longPressFired = false;
   private longPressStart = { x: 0, y: 0 };
+  private selPowerUse: SVGUseElement | null = null;
+  private lastSelLeft = -1;
+  private lastSelTop = -1;
+  private lastCapacity = -1;
+  private lastComboKey = '';
   private rotating: {
     pieceId: number;
     center: { x: number; y: number };
@@ -54,6 +59,7 @@ export class UI {
 
   constructor(game: Game) {
     this.game = game;
+    this.selPowerUse = this.selPower.querySelector('use');
     this.bind();
     this.refreshAll();
   }
@@ -217,17 +223,22 @@ export class UI {
 
   refreshHud() {
     const cap = this.game.pieces.length;
-    this.capacity.classList.toggle('is-hidden', cap < 1800);
-    this.capacityNum.textContent = `${cap}`;
+    if (cap !== this.lastCapacity) {
+      this.lastCapacity = cap;
+      this.capacity.classList.toggle('is-hidden', cap < 1800);
+      this.capacityNum.textContent = `${cap}`;
+    }
     const now = performance.now();
     const showCombo = this.game.comboChain > 0 && now - this.game.comboAt < 2500;
+    const mult = this.game.comboMultiplier;
+    const key = showCombo ? `${this.game.comboChain}|${mult}` : 'hidden';
+    if (key === this.lastComboKey) return;
+    this.lastComboKey = key;
     this.combo.classList.toggle('is-hidden', !showCombo);
-    if (showCombo) {
-      const pct = clamp((this.game.comboChain / 80) * 100, 0, 100);
-      this.comboRing.style.setProperty('--combo', `${pct}`);
-      const mult = this.game.comboMultiplier;
-      this.comboMult.textContent = `×${Number.isInteger(mult) ? mult : mult.toFixed(2).replace('0', '')}`;
-    }
+    if (!showCombo) return;
+    const pct = clamp((this.game.comboChain / 80) * 100, 0, 100);
+    this.comboRing.style.setProperty('--combo', `${pct}`);
+    this.comboMult.textContent = `×${Number.isInteger(mult) ? mult : mult.toFixed(2).replace('0', '')}`;
   }
 
   refreshMode() {
@@ -282,13 +293,13 @@ export class UI {
   updateSelection() {
     const p = this.game.selectedPiece;
     if (!p || this.game.mode !== 'build' || this.game.overlayOpen) {
-      this.selection.classList.add('is-hidden');
+      if (!this.selection.classList.contains('is-hidden')) this.selection.classList.add('is-hidden');
       return;
     }
     const hs = pieceHitSize(p);
     const top = this.game.worldToScreen(p.x, p.y - hs.h * 0.5 - 34 / this.game.camera.zoom);
     if (top.x < -80 || top.x > this.game.viewW + 80 || top.y < -80 || top.y > this.game.viewH + 80) {
-      this.selection.classList.add('is-hidden');
+      if (!this.selection.classList.contains('is-hidden')) this.selection.classList.add('is-hidden');
       return;
     }
     this.selection.classList.remove('is-hidden');
@@ -308,7 +319,7 @@ export class UI {
     this.selSize.setAttribute('aria-label', sizeLabel);
     this.selSize.title = sizeLabel;
     this.selPower.classList.toggle('is-hidden', !canPower);
-    this.selPower.querySelector('use')?.setAttribute('href', canFactory ? '#i-power' : '#i-magnet');
+    this.selPowerUse?.setAttribute('href', canFactory ? '#i-power' : '#i-magnet');
     const repel = canMagnet && (p.polarity ?? 1) < 0;
     const factoryOff = canFactory && p.powered === false;
     this.selPower.classList.toggle('repel', repel);
@@ -324,8 +335,16 @@ export class UI {
     this.selPower.title = powerLabel;
     const count = 3 + (canSize ? 1 : 0) + (canPower ? 1 : 0) - (canRotate ? 0 : 1);
     const width = count * 52 + (count - 1) * 8;
-    this.selection.style.left = `${clamp(top.x - width / 2, 8, this.game.viewW - width - 8)}px`;
-    this.selection.style.top = `${clamp(top.y - 26, 64, this.game.viewH - 150)}px`;
+    const left = clamp(top.x - width / 2, 8, this.game.viewW - width - 8);
+    const topY = clamp(top.y - 26, 64, this.game.viewH - 150);
+    if (Math.abs(left - this.lastSelLeft) > 0.1) {
+      this.lastSelLeft = left;
+      this.selection.style.left = `${left}px`;
+    }
+    if (Math.abs(topY - this.lastSelTop) > 0.1) {
+      this.lastSelTop = topY;
+      this.selection.style.top = `${topY}px`;
+    }
   }
 
   private bindRotate() {

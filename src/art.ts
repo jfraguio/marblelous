@@ -360,7 +360,11 @@ export function drawPiece(ctx: CanvasRenderingContext2D, p: Piece) {
 export function getPieceShadow(p: Piece, scale = spriteScale): Sprite {
   const key = `${p.defId}|${p.color}|${p.len}|${p.variant}|${scale}`;
   const hit = shadowCache.get(key);
-  if (hit) return hit;
+  if (hit) {
+    shadowCache.delete(key);
+    shadowCache.set(key, hit);
+    return hit;
+  }
   const s = getPieceSprite(p, scale);
   const sil = silhouette(s.canvas, '#101C2C');
   const half = makeCanvas(sil.width / 2, sil.height / 2);

@@ -60,6 +60,9 @@ export class Renderer {
   private lastRender = 0;
   private dust: Dust[] = [];
   private prevAir = new Map<number, number>();
+  private visible: Piece[] = [];
+  private sortedPieces: Piece[] = [];
+  private lastPieceRevision = -1;
 
   constructor(canvas: HTMLCanvasElement, game: Game) {
     this.canvas = canvas;
@@ -155,13 +158,21 @@ export class Renderer {
     this.drawGrid(minX, maxX, minY, maxY, zoom);
 
     // Orden por profundidad: lo que está más abajo se dibuja encima.
-    const visible: Piece[] = [];
-    for (const p of g.pieces) {
+    // Solo se reordena cuando cambia el conjunto/posición de piezas.
+    if (this.lastPieceRevision !== g.pieceRevision) {
+      this.lastPieceRevision = g.pieceRevision;
+      const sorted = this.sortedPieces;
+      sorted.length = 0;
+      for (const p of g.pieces) sorted.push(p);
+      sorted.sort((a, b) => a.y - b.y);
+    }
+    const visible = this.visible;
+    visible.length = 0;
+    for (const p of this.sortedPieces) {
       if (p.disabledUntil && p.disabledUntil > now) continue;
       if (p.x < minX - 420 || p.x > maxX + 420 || p.y < minY - 420 || p.y > maxY + 420) continue;
       visible.push(p);
     }
-    visible.sort((a, b) => a.y - b.y);
 
     // Sombra de contacto de todas las piezas (debajo de todas).
     if (this.level < 2) {

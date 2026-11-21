@@ -221,7 +221,6 @@ export class Input {
         const w = this.game.screenToWorld(e.clientX, e.clientY);
         const p = this.game.pieces.find((x) => x.id === s.pieceId);
         if (p) this.game.movePieceTo(p, w.x, w.y - 18 / this.game.camera.zoom);
-        this.ui.updateSelection();
       }
     } else if (s.type === 'place') {
       const w = this.game.screenToWorld(e.clientX, e.clientY);
