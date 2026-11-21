@@ -14,6 +14,8 @@ import {
   MARBLE_BY_ID,
   NOTE_COLORS,
   PALETTE,
+  FACTORY_LAMP,
+  FACTORY_OUTLET,
   getPieceDef,
   pieceHitSize,
   spiralLocal,
@@ -813,9 +815,42 @@ export class Renderer {
       ctx.beginPath();
       ctx.ellipse(0, -8, 52 + k * 4, 52 + k * 4, 0, 0, TAU);
       ctx.stroke();
-      for (let i = 0; i < 3; i++) {
-        const yy = -64 - ((now * 0.03 + i * 34) % 70);
-        drawBubbleSprite(ctx, -20 + i * 20, yy, 4.5, 0.5);
+    }
+
+    if (def.id === 'marbleFactory') {
+      const on = p.powered !== false;
+      const rgb = on ? '79,157,105' : '217,93,57';
+      const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
+      if (on) {
+        ctx.fillStyle = `rgba(${rgb},${0.14 + 0.14 * pulse})`;
+        ctx.beginPath();
+        ctx.arc(FACTORY_LAMP.x, FACTORY_LAMP.y, 16 + pulse * 3, 0, TAU);
+        ctx.fill();
+      }
+      ctx.fillStyle = `rgba(${rgb},${on ? 0.82 + pulse * 0.18 : 0.9})`;
+      ctx.beginPath();
+      ctx.arc(FACTORY_LAMP.x, FACTORY_LAMP.y, 5.4, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(FACTORY_LAMP.x - 1.4, FACTORY_LAMP.y - 1.6, 2.4, 0, TAU);
+      ctx.stroke();
+      if (p.anim && now - p.anim < 340) {
+        const t = (now - p.anim) / 340;
+        ctx.strokeStyle = `rgba(143,211,238,${(1 - t) * 0.6})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(
+          FACTORY_OUTLET.x,
+          FACTORY_OUTLET.y - 8,
+          9 + t * 12,
+          3.5 + t * 5,
+          0,
+          0,
+          TAU
+        );
+        ctx.stroke();
       }
     }
 

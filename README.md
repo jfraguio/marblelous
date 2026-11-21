@@ -18,13 +18,15 @@ La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al do
 - Toca una pieza ya colocada para seleccionarla. Los botones flotantes permiten rotarla, duplicarla, cambiar su longitud (rampas) o borrarla. Cada pieza nueva recibe un color aleatorio de la paleta.
 - Las rampas y cintas son algo más gruesas y tienen una zona de toque generosa: se pueden agarrar un poco por encima o por debajo de la barra para moverlas.
 - Cambia a la canica y toca el lienzo para soltar una; mantén pulsado para hacer lluvia.
-- Dos dedos para mover y hacer zoom.
+- Dos dedos para mover y hacer zoom. Los botones **+** y **−**, bajo el botón de centrar, acercan y alejan el lienzo.
 - Todas las piezas y canicas están disponibles desde el principio. No hay tienda.
 - En Ajustes > Mundos puedes cambiar entre cinco escenarios con fondos detallados: Normal, Fondo marino, Cielo, Espacio y Volcán.
 - La **Fábrica de burbujas** atrapa la canica en un aro de jabón y la hace flotar. El **Ventilador** puede desviarla y la burbuja estalla al tocar cualquier pieza, lo que permite crear tramos aéreos. Si la canica azul entra en una burbuja, todas las canicas azules del lienzo se meten en burbuja a la vez.
-- Los extremos de las rampas, curvas, embudos, cintas, espirales, fábricas de burbujas, ventiladores y propulsores se **imantan** al acercarlos, sin cambiar su rotación.
+- La **Fábrica de canicas** produce una canica por segundo mientras está encendida. Su lucecita es verde cuando funciona y roja cuando está apagada; se cambia con el botón de encendido al seleccionarla o tocándola en modo Jugar. La canica sale por su boca inferior y cae con la gravedad.
+- Los extremos de las rampas, curvas, embudos, cintas, espirales, fábricas de burbujas y ventiladores se **imantan** al acercarlos, sin cambiar su rotación. Los **propulsores** se pegan a cualquier punto de una rampa o cinta y quedan suspendidos justo encima de la pista.
 - El **Balancín** se inclina hacia el lado donde cae la canica: si el peso es suficiente, la hace rodar y caer por ese extremo.
 - El **Electroimán** atrae o repele las canicas cercanas. Se cambia de polaridad con el botón de imán al seleccionarlo o tocándolo directamente en modo Jugar; las canicas de acero responden con mucha más fuerza.
+- La **canica plasma** (violeta) se parte en dos al caer en un **cañón**: las dos mitades salen disparadas hacia arriba.
 - El **Reloj de arena** estalla al tocarlo una canica y ralentiza el tiempo cinco segundos. Vuelve a aparecer cinco segundos después de que el tiempo se restaure.
 - La **Rampa-burbuja** es una placa de hielo quebradizo: aguanta un instante y se rompe bajo el peso de una canica.
 - La **Canica sorpresa** sale como un círculo con `?` en la bandeja: al lanzarla aparece una canica aleatoria de entre todas.

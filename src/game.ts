@@ -4,6 +4,7 @@ import type {
   Marble,
   Mode,
   Particle,
+  PhysEvent,
   Piece,
   Popup,
   Records,
@@ -22,6 +23,7 @@ import {
   PIECE_BY_ID,
   SHOP_ITEMS,
   STARTING_OWNED,
+  FACTORY_OUTLET,
   defaultLen,
   getPieceDef,
   makePiece,
@@ -194,6 +196,7 @@ export class Game {
         steps++;
       }
       if (steps >= 12) this.accumulator = 0;
+      this.updateFactories(now);
       this.updateEffects(raw * this.timeScale, now);
       this.updateBubbles(now);
       this.updateDrop(now);
@@ -432,6 +435,7 @@ export class Game {
 
   /** Atrae el extremo de una pieza hacia el extremo compatible más cercano. */
   private magnetSnap(p: Piece, silent = false): boolean {
+    if (p.defId === 'booster' && this.snapBoosterToTrack(p, silent)) return true;
     const ports = piecePorts(p);
     if (!ports.length) return false;
     let best: { d: number; ax: number; ay: number; bx: number; by: number; key: string } | null = null;
@@ -469,6 +473,71 @@ export class Game {
     p.y += best.by - best.ay;
     const now = performance.now();
     const key = `${p.id}:${best.key}`;
+    if (!silent && (key !== this.lastSnapKey || now - this.lastSnapAt > 260)) {
+      this.lastSnapKey = key;
+      this.lastSnapAt = now;
+      this.audio.clack(this.panForX(p.x));
+      this.spawnBurst(p.x, p.y, '#FFF6D8', 3, 1);
+    }
+    return true;
+  }
+
+  /**
+   * Los propulsores se imantan a cualquier punto de una rampa o cinta, no solo
+   * a sus extremos, y quedan suspendidos justo encima de la pista.
+   */
+  private snapBoosterToTrack(p: Piece, silent: boolean): boolean {
+    let best: { d: number; x: number; y: number; pieceId: number } | null = null;
+    for (const q of this.pieces) {
+      if (q.id === p.id) continue;
+      let half = 0;
+      let radius = 0;
+      if (q.defId === 'ramp') {
+        half = q.len / 2;
+        radius = 8;
+      } else if (q.defId === 'conveyor') {
+        half = 160;
+        radius = 8;
+      } else if (q.defId === 'bubble') {
+        half = 110;
+        radius = 5;
+      } else {
+        continue;
+      }
+      const c = Math.cos(q.rot);
+      const s = Math.sin(q.rot);
+      const ax = q.x - half * c;
+      const ay = q.y - half * s;
+      const bx = q.x + half * c;
+      const by = q.y + half * s;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const len2 = dx * dx + dy * dy;
+      if (len2 < 1) continue;
+      let t = ((p.x - ax) * dx + (p.y - ay) * dy) / len2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const px = ax + dx * t;
+      const py = ay + dy * t;
+      const dRamp = Math.hypot(p.x - px, p.y - py);
+      if (dRamp > 72) continue;
+      // Normal hacia arriba (el propulsor queda por encima de la pista).
+      const nl = Math.hypot(dx, dy) || 1;
+      let nx = -dy / nl;
+      let ny = dx / nl;
+      if (ny > 0) {
+        nx = -nx;
+        ny = -ny;
+      }
+      const off = 40 + radius + 1;
+      const tx = px + nx * off;
+      const ty = py + ny * off;
+      if (!best || dRamp < best.d) best = { d: dRamp, x: tx, y: ty, pieceId: q.id };
+    }
+    if (!best) return false;
+    p.x = best.x;
+    p.y = best.y;
+    const now = performance.now();
+    const key = `${p.id}:boost:${best.pieceId}`;
     if (!silent && (key !== this.lastSnapKey || now - this.lastSnapAt > 260)) {
       this.lastSnapKey = key;
       this.lastSnapAt = now;
@@ -569,16 +638,26 @@ export class Game {
     if (moved) this.physics.syncBalances(this.pieces);
   }
 
-  toggleMagnet(id: number) {
+  togglePower(id: number) {
     const p = this.pieces.find((x) => x.id === id);
-    if (!p || p.defId !== 'electromagnet') return;
-    p.polarity = (p.polarity ?? 1) > 0 ? -1 : 1;
-    this.physics.rebuild(this.pieces);
-    this.wakeMarbles();
+    if (!p) return;
     const pan = this.panForX(p.x);
-    this.audio.ui();
-    this.audio.impact('metal', p.polarity > 0 ? 460 : 320, pan);
-    this.spawnBurst(p.x, p.y, p.polarity > 0 ? PALETTE.teal : PALETTE.red, 8, 1);
+    if (p.defId === 'electromagnet') {
+      p.polarity = (p.polarity ?? 1) > 0 ? -1 : 1;
+      this.physics.rebuild(this.pieces);
+      this.wakeMarbles();
+      this.audio.ui();
+      this.audio.impact('metal', p.polarity > 0 ? 460 : 320, pan);
+      this.spawnBurst(p.x, p.y, p.polarity > 0 ? PALETTE.teal : PALETTE.red, 8, 1);
+    } else if (p.defId === 'marbleFactory') {
+      p.powered = p.powered === false;
+      p.emitAt = p.powered ? performance.now() + 420 : 0;
+      this.audio.ui();
+      this.audio.impact('metal', p.powered ? 520 : 300, pan);
+      this.spawnBurst(p.x, p.y, p.powered ? PALETTE.green : PALETTE.red, 8, 1);
+    } else {
+      return;
+    }
     this.dirty = true;
     this.requestSave();
     this.ui?.updateSelection();
@@ -608,7 +687,8 @@ export class Game {
       flash: undefined,
       anim: undefined,
       disabledUntil: undefined,
-      charge: undefined
+      charge: undefined,
+      emitAt: undefined
     };
     this.pieces.push(clone);
     this.magnetSnap(clone, true);
@@ -901,6 +981,8 @@ export class Game {
         this.audio.cannon(pan);
         this.spawnBurst(e.x, e.y, PALETTE.purple, 5, 0);
         this.score(2, e.x, e.y, e.marbleId, now);
+        const m = this.marbles.find((x) => x.id === e.marbleId);
+        if (m && m.alive && m.typeId === 'plasma') this.splitPlasma(m, e, now);
       } else if (e.type === 'boost') {
         if (!this.allow(`boost:${e.marbleId}:${e.pieceId}`, 500, now)) continue;
         this.audio.boost(pan);
@@ -960,6 +1042,40 @@ export class Game {
         this.ui?.flash(0.3);
       }
     }
+  }
+
+  /** La canica plasma se parte en dos al caer en un cañón. */
+  private splitPlasma(m: Marble, e: PhysEvent, now: number) {
+    if (this.marbles.length >= 200) return;
+    const type = MARBLE_BY_ID.get('plasma');
+    if (!type) return;
+    const speed = Math.hypot(m.vx, m.vy);
+    const ang = Math.atan2(m.vy, m.vx);
+    const spread = 0.3;
+    m.vx = Math.cos(ang - spread) * speed;
+    m.vy = Math.sin(ang - spread) * speed;
+    m.lastCannon = now;
+    m.lastCannonPiece = e.pieceId;
+    const nx = -Math.sin(ang);
+    const ny = Math.cos(ang);
+    const clone = createMarble(
+      this.nextMarbleId++,
+      type,
+      e.x + nx * m.r * 1.2,
+      e.y + ny * m.r * 1.2,
+      this.dropId,
+      now
+    );
+    clone.vx = Math.cos(ang + spread) * speed;
+    clone.vy = Math.sin(ang + spread) * speed;
+    clone.lastCannon = now;
+    clone.lastCannonPiece = e.pieceId;
+    clone.awake = true;
+    this.marbles.push(clone);
+    this.spawnBurst(e.x, e.y, type.color, 8, 1);
+    this.spawnBurst(e.x, e.y, type.glow ?? PALETTE.teal, 6, 0);
+    this.records.marbles = Math.max(this.records.marbles, this.marbles.length);
+    this.dirty = true;
   }
 
   /** Al entrar una canica azul en una burbuja, todas las azules del lienzo suben con ella. */
@@ -1044,6 +1160,43 @@ export class Game {
     this.requestSave();
   }
 
+  /** Las fábricas de canicas encendidas emiten una canica por segundo. */
+  private updateFactories(now: number) {
+    for (const p of this.pieces) {
+      if (p.defId !== 'marbleFactory') continue;
+      if (p.powered === false) {
+        p.emitAt = 0;
+        continue;
+      }
+      if (!p.emitAt) {
+        p.emitAt = now + 380;
+        continue;
+      }
+      if (now < p.emitAt) continue;
+      p.emitAt = now + 1000;
+      this.emitFactoryMarble(p, now);
+    }
+  }
+
+  private emitFactoryMarble(p: Piece, now: number) {
+    if (this.marbles.length >= 200) return;
+    const type = MARBLE_BY_ID.get(BLUE_MARBLE) ?? MARBLE_TYPES[0];
+    const c = Math.cos(p.rot);
+    const s = Math.sin(p.rot);
+    const x = p.x + FACTORY_OUTLET.x * c - FACTORY_OUTLET.y * s;
+    const y = p.y + FACTORY_OUTLET.x * s + FACTORY_OUTLET.y * c;
+    const m = createMarble(this.nextMarbleId++, type, x, y, this.dropId, now);
+    m.vx = (Math.random() - 0.5) * 24;
+    m.vy = 30;
+    m.auto = true;
+    this.marbles.push(m);
+    p.anim = now;
+    this.records.marbles = Math.max(this.records.marbles, this.marbles.length);
+    this.spawnBurst(x, y, type.color, 3, 0);
+    this.audio.impact('metal', 300, this.panForX(x));
+    this.dirty = true;
+  }
+
   private updateBubbles(now: number) {
     for (const p of this.pieces) {
       if (p.defId !== 'bubble') continue;
@@ -1105,7 +1258,7 @@ export class Game {
       return;
     }
     let awake = false;
-    for (const m of this.marbles) if (m.alive && m.awake) awake = true;
+    for (const m of this.marbles) if (m.alive && m.awake && !m.auto) awake = true;
     if (!awake && now - this.lastSpawn > 2200) this.endDrop();
   }
 
@@ -1361,7 +1514,8 @@ export class Game {
           len: Number(raw.len) || defaultLen(raw.defId),
           color: Number.isFinite(raw.color) ? raw.color : getPieceDef(raw.defId).defaultColor,
           variant: Number(raw.variant) || 0,
-          polarity: raw.defId === 'electromagnet' && Number(raw.polarity) < 0 ? -1 : undefined
+          polarity: raw.defId === 'electromagnet' && Number(raw.polarity) < 0 ? -1 : undefined,
+          powered: raw.defId === 'marbleFactory' ? raw.powered !== false : undefined
         };
         pieces.push(p);
       }
@@ -1452,7 +1606,8 @@ export class Game {
             len: p.len,
             color: p.color,
             variant: p.variant,
-            polarity: p.defId === 'electromagnet' ? (p.polarity ?? 1) : undefined
+            polarity: p.defId === 'electromagnet' ? (p.polarity ?? 1) : undefined,
+            powered: p.defId === 'marbleFactory' ? p.powered !== false : undefined
           })),
           camera: i === activeIndex ? { ...this.camera } : { ...w.camera },
           records: i === activeIndex ? { ...this.records } : { ...w.records }

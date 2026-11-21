@@ -284,6 +284,7 @@ button:focus-visible {
 .sel-btn.danger { background: var(--red); }
 .sel-btn.power { background: var(--teal); }
 .sel-btn.power.repel { background: var(--yellow); color: var(--ink); }
+.sel-btn.power.off { background: var(--red); color: var(--paper); }
 
 /* ---------- Tray ---------- */
 

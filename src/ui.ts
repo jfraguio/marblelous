@@ -63,6 +63,8 @@ export class UI {
       this.game.audio.ui();
       this.game.saveCamera();
     });
+    $('#btn-zoom-in').addEventListener('click', () => this.zoomStep(1.25));
+    $('#btn-zoom-out').addEventListener('click', () => this.zoomStep(0.8));
     $('#btn-settings').addEventListener('click', () => this.openOverlay('settings'));
 
     $$('.close').forEach((btn) => {
@@ -91,8 +93,8 @@ export class UI {
     this.selPower.addEventListener('click', (e) => {
       e.stopPropagation();
       const p = this.game.selectedPiece;
-      if (!p || p.defId !== 'electromagnet') return;
-      this.game.toggleMagnet(p.id);
+      if (!p || (p.defId !== 'electromagnet' && p.defId !== 'marbleFactory')) return;
+      this.game.togglePower(p.id);
       this.updateSelection();
     });
     this.selSize.addEventListener('click', (e) => {
@@ -188,6 +190,12 @@ export class UI {
     this.refreshAll();
   }
 
+  private zoomStep(factor: number) {
+    this.game.zoomAtScreen(this.game.viewW / 2, this.game.viewH / 2, this.game.camera.zoom * factor);
+    this.game.saveCamera();
+    this.game.audio.ui();
+  }
+
   refreshAll() {
     this.refreshHud();
     this.refreshTray();
@@ -275,13 +283,24 @@ export class UI {
     this.selection.classList.remove('is-hidden');
     const canRotate = p.defId !== 'balance' && p.defId !== 'electromagnet';
     const canSize = p.defId === 'ramp' || p.defId === 'portal';
-    const canPower = p.defId === 'electromagnet';
+    const canMagnet = p.defId === 'electromagnet';
+    const canFactory = p.defId === 'marbleFactory';
+    const canPower = canMagnet || canFactory;
     this.selRotate.classList.toggle('is-hidden', !canRotate);
     this.selSize.classList.toggle('is-hidden', !canSize);
     this.selPower.classList.toggle('is-hidden', !canPower);
-    const repel = canPower && (p.polarity ?? 1) < 0;
+    this.selPower.querySelector('use')?.setAttribute('href', canFactory ? '#i-power' : '#i-magnet');
+    const repel = canMagnet && (p.polarity ?? 1) < 0;
+    const factoryOff = canFactory && p.powered === false;
     this.selPower.classList.toggle('repel', repel);
-    const powerLabel = repel ? 'Atraer canicas' : 'Repeler canicas';
+    this.selPower.classList.toggle('off', factoryOff);
+    const powerLabel = canFactory
+      ? factoryOff
+        ? 'Encender fábrica'
+        : 'Apagar fábrica'
+      : repel
+        ? 'Atraer canicas'
+        : 'Repeler canicas';
     this.selPower.setAttribute('aria-label', powerLabel);
     this.selPower.title = powerLabel;
     const count = 3 + (canSize ? 1 : 0) + (canPower ? 1 : 0) - (canRotate ? 0 : 1);
@@ -398,7 +417,7 @@ export class UI {
       <div class="set-value save-slots">${saveSlots}</div>
     </div>`);
     rows.push(this.buildRow('trash', 'Borrar', '', 'clear', 'reset-row'));
-    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.10 · sin datos · sin red</span></div>`);
+    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.11 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
     this.settingsBody.querySelectorAll<HTMLElement>('.set-row.tap').forEach((row) => {

@@ -1,6 +1,7 @@
 import type { MarbleType, Piece } from './types';
 import {
   COLORS,
+  FACTORY_LAMP,
   FUNNEL_LEFT,
   FUNNEL_RIGHT,
   MARBLE_TYPES,
@@ -169,6 +170,7 @@ function colorFor(p: Piece): string {
   if (p.defId === 'spiral') return PALETTE.teal;
   if (p.defId === 'bubble') return '#8FD3EE';
   if (p.defId === 'bubbleLift') return '#8FD3EE';
+  if (p.defId === 'marbleFactory') return PALETTE.teal;
   if (p.defId === 'portal') return PALETTE.purple;
   if (p.defId === 'fan') return PALETTE.teal;
   if (p.defId === 'electromagnet') return PALETTE.steel;
@@ -195,6 +197,8 @@ function spriteDims(p: Piece): { w: number; h: number } {
       return { w: 250, h: 40 };
     case 'bubbleLift':
       return { w: 156, h: 196 };
+    case 'marbleFactory':
+      return { w: 148, h: 176 };
     case 'portal':
       return { w: p.len + 84, h: 120 };
     case 'fan':
@@ -888,21 +892,170 @@ function buildPieceSprite(p: Piece, ww: number, hh: number): Sprite {
       ctx.arc(0, 0, 38, 0.55, 2.35);
       ctx.stroke();
       ctx.restore();
+    } else if (p.defId === 'marbleFactory') {
+      // Patas y sombra.
+      ctx.fillStyle = PALETTE.shadow;
+      ctx.beginPath();
+      ctx.ellipse(0, 72, 54, 11, 0, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = shade(PALETTE.steel, -0.5);
+      rr(ctx, -46, 46, 24, 20, 6);
+      ctx.fill();
+      rr(ctx, 22, 46, 24, 20, 6);
+      ctx.fill();
+      ctx.fillStyle = shade(PALETTE.steel, -0.18);
+      rr(ctx, -44, 44, 20, 11, 5);
+      ctx.fill();
+      rr(ctx, 24, 44, 20, 11, 5);
+      ctx.fill();
 
-      const bubbles: [number, number, number][] = [[-28, -68, 7], [18, -80, 9], [36, -62, 5], [-4, -94, 4]];
-      for (const [bx, by, br] of bubbles) {
-        ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      // Cuerpo principal.
+      ctx.fillStyle = shade(PALETTE.teal, -0.42);
+      rr(ctx, -48, -20, 96, 72, 16);
+      ctx.fill();
+      ctx.fillStyle = PALETTE.teal;
+      rr(ctx, -44, -18, 88, 66, 14);
+      ctx.fill();
+      ctx.strokeStyle = rgba('#ffffff', 0.24);
+      ctx.lineWidth = 2;
+      rr(ctx, -42, -16, 84, 16, 8);
+      ctx.stroke();
+
+      // Panel frontal con engranajes.
+      ctx.fillStyle = shade(PALETTE.teal, -0.24);
+      rr(ctx, -33, 1, 58, 40, 10);
+      ctx.fill();
+      ctx.strokeStyle = rgba(PALETTE.ink, 0.2);
+      ctx.lineWidth = 1.4;
+      rr(ctx, -33, 1, 58, 40, 10);
+      ctx.stroke();
+      const gear = (gx: number, gy: number, rad: number) => {
+        ctx.fillStyle = shade(PALETTE.steel, -0.1);
+        ctx.beginPath();
+        const teeth = 7;
+        for (let i = 0; i < teeth * 2; i++) {
+          const a = (i / (teeth * 2)) * TAU;
+          const gr2 = i % 2 === 0 ? rad : rad * 0.76;
+          const gx2 = gx + Math.cos(a) * gr2;
+          const gy2 = gy + Math.sin(a) * gr2;
+          if (i === 0) ctx.moveTo(gx2, gy2);
+          else ctx.lineTo(gx2, gy2);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = shade(PALETTE.steel, 0.22);
+        ctx.beginPath();
+        ctx.arc(gx, gy, rad * 0.5, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = '#2B2D33';
+        ctx.beginPath();
+        ctx.arc(gx, gy, rad * 0.18, 0, TAU);
+        ctx.fill();
+      };
+      gear(-14, 21, 9);
+      gear(9, 26, 7);
+      gear(15, 9, 5);
+
+      // Boquilla de salida.
+      ctx.fillStyle = shade(PALETTE.steel, -0.4);
+      rr(ctx, -14, 47, 28, 17, 6);
+      ctx.fill();
+      ctx.fillStyle = PALETTE.steel;
+      rr(ctx, -10, 48, 20, 13, 5);
+      ctx.fill();
+      ctx.fillStyle = '#23252B';
+      ctx.beginPath();
+      ctx.ellipse(0, 63, 12, 4.5, 0, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = rgba('#ffffff', 0.35);
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.ellipse(0, 63, 12, 4.5, 0, 0, TAU);
+      ctx.stroke();
+
+      // Cuello y tolva de cristal.
+      ctx.fillStyle = shade(PALETTE.steel, -0.34);
+      rr(ctx, -31, -32, 62, 18, 8);
+      ctx.fill();
+      ctx.fillStyle = PALETTE.steel;
+      rr(ctx, -27, -30, 54, 12, 6);
+      ctx.fill();
+      ctx.strokeStyle = rgba('#ffffff', 0.45);
+      ctx.lineWidth = 1.2;
+      rr(ctx, -27, -30, 54, 4, 2);
+      ctx.stroke();
+
+      const globeY = -58;
+      const globeR = 34;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, globeY, globeR, 0, TAU);
+      ctx.clip();
+      const glass = ctx.createRadialGradient(-12, globeY - 14, 3, 0, globeY, globeR);
+      glass.addColorStop(0, 'rgba(240,252,255,0.82)');
+      glass.addColorStop(0.55, 'rgba(180,230,248,0.44)');
+      glass.addColorStop(1, 'rgba(116,188,218,0.6)');
+      ctx.fillStyle = glass;
+      ctx.fillRect(-globeR, globeY - globeR, globeR * 2, globeR * 2);
+      const balls: [number, number, number, string][] = [
+        [-14, -63, 7.4, COLORS[1]],
+        [-2, -72, 6.6, COLORS[2]],
+        [11, -61, 7.8, COLORS[0]],
+        [-8, -48, 8, COLORS[3]],
+        [7, -46, 7.2, COLORS[4]],
+        [21, -72, 5.8, COLORS[5]],
+        [0, -58, 6.8, COLORS[0]],
+        [19, -46, 5.8, COLORS[2]]
+      ];
+      for (const [bx, by, br, col] of balls) {
+        ctx.fillStyle = shade(col, -0.2);
         ctx.beginPath();
         ctx.arc(bx, by, br, 0, TAU);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(46,158,151,0.55)';
-        ctx.lineWidth = 1.4;
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.fillStyle = col;
         ctx.beginPath();
-        ctx.arc(bx - br * 0.3, by - br * 0.35, Math.max(1, br * 0.22), 0, TAU);
+        ctx.arc(bx - 0.6, by - 0.8, br * 0.84, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = rgba('#ffffff', 0.55);
+        ctx.beginPath();
+        ctx.arc(bx - br * 0.32, by - br * 0.36, br * 0.26, 0, TAU);
         ctx.fill();
       }
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.beginPath();
+      ctx.arc(0, globeY, globeR, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = shade(PALETTE.steel, -0.22);
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(0, globeY, globeR + 1, 0, TAU);
+      ctx.stroke();
+      ctx.strokeStyle = rgba('#ffffff', 0.55);
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(0, globeY, globeR + 1, 0, TAU);
+      ctx.stroke();
+      ctx.strokeStyle = rgba('#ffffff', 0.7);
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(0, globeY, globeR - 7, -2.4, -1.15);
+      ctx.stroke();
+
+      // Zócalo de la lucecita de estado (el color lo pinta el renderer).
+      ctx.fillStyle = '#2B2D33';
+      ctx.beginPath();
+      ctx.arc(FACTORY_LAMP.x, FACTORY_LAMP.y, 8, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.18)';
+      ctx.beginPath();
+      ctx.arc(FACTORY_LAMP.x, FACTORY_LAMP.y, 5.6, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = rgba('#ffffff', 0.4);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(FACTORY_LAMP.x, FACTORY_LAMP.y, 8, 0, TAU);
+      ctx.stroke();
     } else if (p.defId === 'portal') {
       const ring = (x: number, col: string) => {
         ctx.save();

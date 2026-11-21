@@ -216,14 +216,15 @@ function rectColliders(
   w: number,
   h: number,
   r: number,
-  mat: keyof typeof MATERIALS
+  mat: keyof typeof MATERIALS,
+  oy = 0
 ) {
   const hw = Math.max(1, w / 2 - r);
   const hh = Math.max(1, h / 2 - r);
-  addCap(out, p, -hw, -hh, hw, -hh, r, mat);
-  addCap(out, p, hw, -hh, hw, hh, r, mat);
-  addCap(out, p, hw, hh, -hw, hh, r, mat);
-  addCap(out, p, -hw, hh, -hw, -hh, r, mat);
+  addCap(out, p, -hw, oy - hh, hw, oy - hh, r, mat);
+  addCap(out, p, hw, oy - hh, hw, oy + hh, r, mat);
+  addCap(out, p, hw, oy + hh, -hw, oy + hh, r, mat);
+  addCap(out, p, -hw, oy + hh, -hw, oy - hh, r, mat);
 }
 
 function arcColliders(
@@ -299,6 +300,11 @@ export function spiralDepth(t: number): number {
 }
 
 export const SPIRAL_ENTRY = spiralLocal(0);
+
+/** Punto local de salida de la Fábrica de canicas (por debajo de la boca). */
+export const FACTORY_OUTLET = { x: 0, y: 72 };
+/** Posición local de la lucecita de estado de la Fábrica de canicas. */
+export const FACTORY_LAMP = { x: 30, y: -6 };
 
 const defs: PieceDef[] = [
   {
@@ -596,6 +602,22 @@ const defs: PieceDef[] = [
     }
   },
   {
+    id: 'marbleFactory',
+    category: 'energy',
+    price: 0,
+    label: 'Fábrica de canicas',
+    w: 140,
+    h: 170,
+    tintable: false,
+    defaultColor: 0,
+    build: (p) => {
+      const c: Collider[] = [];
+      // Cuerpo metálico de la máquina. La tolva superior es decorativa.
+      rectColliders(c, p, 88, 64, 10, 'metal', 12);
+      return { colliders: c, triggers: [] };
+    }
+  },
+  {
     id: 'portal',
     category: 'energy',
     price: 0,
@@ -721,6 +743,7 @@ export function makePiece(id: number, defId: string, x: number, y: number, rot =
     len: len ?? defaultLen(defId),
     color: def.defaultColor,
     variant: 0,
+    powered: defId === 'marbleFactory' ? true : undefined,
     bornAt: performance.now()
   };
 }
@@ -828,6 +851,7 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'spiral', category: 'build', price: 0, label: 'Caída en espiral', kind: 'piece' },
   { id: 'bubble', category: 'build', price: 0, label: 'Rampa-burbuja', kind: 'piece' },
   { id: 'bubbleLift', category: 'energy', price: 0, label: 'Fábrica de burbujas', kind: 'piece' },
+  { id: 'marbleFactory', category: 'energy', price: 0, label: 'Fábrica de canicas', kind: 'piece' },
   { id: 'portal', category: 'energy', price: 0, label: 'Portales', kind: 'piece' },
   { id: 'fan', category: 'energy', price: 0, label: 'Ventilador', kind: 'piece' },
   { id: 'electromagnet', category: 'energy', price: 900, label: 'Electroimán', kind: 'piece' },

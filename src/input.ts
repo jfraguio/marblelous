@@ -129,8 +129,8 @@ export class Input {
     }
     if (this.game.mode === 'play') {
       const hit = this.game.getPieceAt(world.x, world.y);
-      if (hit?.defId === 'electromagnet') {
-        this.game.toggleMagnet(hit.id);
+      if (hit?.defId === 'electromagnet' || hit?.defId === 'marbleFactory') {
+        this.game.togglePower(hit.id);
         return;
       }
       const rainTimer = window.setTimeout(() => {

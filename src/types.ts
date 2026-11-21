@@ -31,6 +31,10 @@ export interface Piece {
   charge?: number;
   /** electromagnet polarity: 1 atrae, -1 repele */
   polarity?: number;
+  /** marble factory on/off state */
+  powered?: boolean;
+  /** next automatic marble emission timestamp (runtime) */
+  emitAt?: number;
   bornAt?: number;
 }
 
@@ -133,6 +137,8 @@ export interface Marble {
   bubbled: boolean;
   bubbleT: number;
   bubbleReadyAt: number;
+  /** canica generada automáticamente por una fábrica */
+  auto?: boolean;
 }
 
 export interface PieceDef {
