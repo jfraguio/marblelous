@@ -31,9 +31,14 @@ import {
 } from './pieces';
 import type { UI } from './ui';
 import { CAMERA_TILT, clamp, nowMs, prefersReducedMotion, vibrate } from './util';
+import { WORLD_THEMES } from './worlds';
 
 const SAVE_KEY = 'marblelous.save.v1';
 const BACKUP_KEY = 'marblelous.backup.v1';
+const SNAPSHOTS_KEY = 'marblelous.snapshots.v1';
+const MAX_SNAPSHOTS = 5;
+/** La canica de cristal es la canica azul del juego. */
+const BLUE_MARBLE = 'crystal';
 const FIXED = 1 / 120;
 
 interface DropStats {
@@ -91,6 +96,8 @@ export class Game {
   owned = new Set<string>(STARTING_OWNED);
   worlds: WorldData[] = [];
   activeWorld = 0;
+  /** Últimas partidas borradas; la más reciente al final. */
+  snapshots: SaveData[] = [];
   records: Records = {
     combo: 1,
     speed: 0,
@@ -131,6 +138,7 @@ export class Game {
     this.canvas = canvas;
     this.audio = audio;
     this.load();
+    this.loadSnapshots();
     this.physics.rebuild(this.pieces);
     this.applySettings();
     this.bindVisibility();
@@ -620,6 +628,7 @@ export class Game {
 
   clearCanvas() {
     if (this.pieces.length === 0 && this.marbles.length === 0) return;
+    this.archiveGame();
     this.history.push({ type: 'clear', pieces: this.pieces });
     this.history = this.history.slice(-60);
     this.redoStack.length = 0;
@@ -640,9 +649,70 @@ export class Game {
     this.audio.impact('brick', 300, 0);
     this.spawnBurst(this.camera.x, this.camera.y, PALETTE.muted, 12, 0);
     this.dirty = true;
-    this.requestSave();
+    this.save();
     this.ui?.refreshAll();
     this.ui?.toast('trash');
+  }
+
+  /** Guarda el estado actual en la cola de partidas borradas. */
+  private archiveGame() {
+    this.snapshots.push(this.buildSaveData());
+    if (this.snapshots.length > MAX_SNAPSHOTS) {
+      this.snapshots.splice(0, this.snapshots.length - MAX_SNAPSHOTS);
+    }
+    this.persistSnapshots();
+  }
+
+  loadSnapshot(index: number) {
+    const snapshot = this.snapshots[index];
+    if (!snapshot) return false;
+    try {
+      this.applySave(this.normalize(snapshot, this.defaults()));
+    } catch {
+      return false;
+    }
+    this.marbles = [];
+    this.particles = [];
+    this.popups = [];
+    this.history = [];
+    this.redoStack = [];
+    this.selectedPieceId = 0;
+    this.armedDefId = '';
+    this.armedSticky = false;
+    this.ghost = null;
+    this.dropPreview = null;
+    this.timeScale = 1;
+    this.slowUntil = 0;
+    this.dropActive = false;
+    document.body.classList.remove('armed');
+    this.physics.rebuild(this.pieces);
+    this.physics.clearDisabled();
+    this.dirty = true;
+    this.save();
+    this.ui?.refreshAll();
+    return true;
+  }
+
+  private loadSnapshots() {
+    try {
+      const raw = localStorage.getItem(SNAPSHOTS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return;
+      this.snapshots = parsed
+        .filter((item): item is SaveData => !!item && typeof item === 'object' && Array.isArray((item as SaveData).worlds))
+        .slice(-MAX_SNAPSHOTS);
+    } catch {
+      this.snapshots = [];
+    }
+  }
+
+  private persistSnapshots() {
+    try {
+      localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(this.snapshots));
+    } catch {
+      /* sin espacio: las partidas guardadas siguen en memoria */
+    }
   }
 
   undo() {
@@ -844,6 +914,7 @@ export class Game {
         this.spawnBurst(e.x, e.y, '#8FD3EE', 12, 1);
         this.spawnBurst(e.x, e.y, PALETTE.paper3, 6, 0);
         this.score(6, e.x, e.y, e.marbleId, now);
+        this.bubbleBlueMarbles(e.marbleId);
       } else if (e.type === 'pop') {
         this.audio.pop(pan);
         this.spawnBurst(e.x, e.y, PALETTE.paper3, 8, 0);
@@ -888,6 +959,29 @@ export class Game {
         this.score(80, e.x, e.y, e.marbleId, now);
         this.ui?.flash(0.3);
       }
+    }
+  }
+
+  /** Al entrar una canica azul en una burbuja, todas las azules del lienzo suben con ella. */
+  private bubbleBlueMarbles(triggerId: number) {
+    const trigger = this.marbles.find((m) => m.id === triggerId);
+    if (!trigger || trigger.typeId !== BLUE_MARBLE) return;
+    for (const m of this.marbles) {
+      if (m.id === triggerId || !m.alive || m.bubbled || m.typeId !== BLUE_MARBLE) continue;
+      m.bubbled = true;
+      m.bubbleT = 0;
+      m.vx *= 0.25;
+      m.vy = -40;
+      m.contact = 0;
+      m.airTime = 0;
+      m.sleepTimer = 0;
+      m.ridePiece = 0;
+      m.rideT = 0;
+      m.rideScale = 1;
+      m.rideDepth = 0;
+      m.awake = true;
+      this.spawnBurst(m.x, m.y, '#8FD3EE', 10, 1);
+      this.spawnBurst(m.x, m.y, PALETTE.paper3, 4, 0);
     }
   }
 
@@ -1188,6 +1282,7 @@ export class Game {
     try {
       localStorage.removeItem(SAVE_KEY);
       localStorage.removeItem(BACKUP_KEY);
+      localStorage.removeItem(SNAPSHOTS_KEY);
     } catch {
       /* noop */
     }
@@ -1228,25 +1323,20 @@ export class Game {
   }
 
   private defaults(): SaveData {
-    const starter = this.starterPieces();
     const empty = (): WorldData => ({
       pieces: [],
       camera: { x: 0, y: 0, zoom: 1 },
       records: { combo: 1, speed: 0, airTime: 0, marbles: 0, bestDrop: 0, goals: 0 }
     });
+    const space = Math.max(0, WORLD_THEMES.findIndex((t) => t.kind === 'space'));
     return {
       v: 1,
       updatedAt: Date.now(),
       currency: 0,
       lifetime: 0,
       owned: [...STARTING_OWNED],
-      activeWorld: 0,
-      worlds: [
-        { pieces: starter, camera: { x: 10, y: 30, zoom: 1 }, records: empty().records },
-        empty(),
-        empty(),
-        empty()
-      ],
+      activeWorld: space,
+      worlds: WORLD_THEMES.map(() => empty()),
       settings: {
         quality: 'auto',
         haptics: false
@@ -1255,17 +1345,9 @@ export class Game {
     };
   }
 
-  private starterPieces(): Piece[] {
-    return [
-      makePiece(1, 'ramp', -140, -70, 0.44, 220),
-      makePiece(2, 'xylo5', 80, 20, 0.1),
-      makePiece(3, 'goal', 300, 88, 0)
-    ];
-  }
-
   private normalize(data: SaveData, fallback: SaveData): SaveData {
     const worlds: WorldData[] = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < WORLD_THEMES.length; i++) {
       const w = data.worlds?.[i] ?? fallback.worlds[i];
       const pieces: Piece[] = [];
       for (const raw of w.pieces ?? []) {
@@ -1309,7 +1391,7 @@ export class Game {
       currency: Math.max(0, Number(data.currency) || 0),
       lifetime: Math.max(0, Number(data.lifetime) || 0),
       owned: [...owned],
-      activeWorld: clamp(Number(data.activeWorld) || 0, 0, 3),
+      activeWorld: clamp(Number(data.activeWorld) || 0, 0, WORLD_THEMES.length - 1),
       worlds,
       settings: {
         quality: (data.settings?.quality ?? fallback.settings.quality) as Settings['quality'],
@@ -1348,6 +1430,39 @@ export class Game {
     this.nextId = Math.max(0, ...this.pieces.map((p) => p.id)) + 1;
   }
 
+  /** Instantánea serializable del estado actual (sin modificar los mundos). */
+  private buildSaveData(): SaveData {
+    const activeIndex = this.activeWorld;
+    return {
+      v: 1,
+      updatedAt: Date.now(),
+      currency: this.currency,
+      lifetime: this.lifetime,
+      owned: [...this.owned],
+      activeWorld: this.activeWorld,
+      worlds: this.worlds.map((w, i) => {
+        const pieces = i === activeIndex ? this.pieces : w.pieces;
+        return {
+          pieces: pieces.map((p) => ({
+            id: p.id,
+            defId: p.defId,
+            x: Math.round(p.x * 10) / 10,
+            y: Math.round(p.y * 10) / 10,
+            rot: Math.round(p.rot * 1000) / 1000,
+            len: p.len,
+            color: p.color,
+            variant: p.variant,
+            polarity: p.defId === 'electromagnet' ? (p.polarity ?? 1) : undefined
+          })),
+          camera: i === activeIndex ? { ...this.camera } : { ...w.camera },
+          records: i === activeIndex ? { ...this.records } : { ...w.records }
+        };
+      }),
+      settings: { ...this.settings },
+      selectedMarble: this.selectedMarble
+    };
+  }
+
   save() {
     const active = this.worlds[this.activeWorld];
     for (const w of this.worlds) {
@@ -1356,31 +1471,7 @@ export class Game {
     active.pieces = this.pieces;
     active.camera = { ...this.camera };
     active.records = this.records;
-    const data: SaveData = {
-      v: 1,
-      updatedAt: Date.now(),
-      currency: this.currency,
-      lifetime: this.lifetime,
-      owned: [...this.owned],
-      activeWorld: this.activeWorld,
-      worlds: this.worlds.map((w) => ({
-        pieces: w.pieces.map((p) => ({
-          id: p.id,
-          defId: p.defId,
-          x: Math.round(p.x * 10) / 10,
-          y: Math.round(p.y * 10) / 10,
-          rot: Math.round(p.rot * 1000) / 1000,
-          len: p.len,
-          color: p.color,
-          variant: p.variant,
-          polarity: p.defId === 'electromagnet' ? (p.polarity ?? 1) : undefined
-        })),
-        camera: { ...w.camera },
-        records: { ...w.records }
-      })),
-      settings: { ...this.settings },
-      selectedMarble: this.selectedMarble
-    };
+    const data = this.buildSaveData();
     try {
       const prev = localStorage.getItem(SAVE_KEY);
       if (prev) localStorage.setItem(BACKUP_KEY, prev);

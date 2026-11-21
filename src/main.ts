@@ -12,6 +12,7 @@ if (new URLSearchParams(location.search).has('reset')) {
   try {
     localStorage.removeItem('marblelous.save.v1');
     localStorage.removeItem('marblelous.backup.v1');
+    localStorage.removeItem('marblelous.snapshots.v1');
   } catch {
     /* noop */
   }

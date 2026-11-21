@@ -746,3 +746,22 @@ body.armed #game { cursor: crosshair; }
   margin-left: 5px;
   white-space: nowrap;
 }
+
+.save-slots { display: flex; gap: 6px; }
+.save-slot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--paper-3);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink-soft);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+.save-slot:not(.is-empty):active { transform: scale(.94); }
+.save-slot.is-empty { opacity: .34; color: var(--muted); cursor: default; }

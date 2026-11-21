@@ -12,6 +12,7 @@ https://fraguio.com/marblelous/
 
 La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al dominio configurado.
 
+- La primera vez que abres la app el lienzo está vacío y el mundo activo es **Espacio**.
 - Toca una pieza de la bandeja y después toca el lienzo para colocarla. La pieza se deselecciona al colocarla: para poner otra, vuelve a tocarla en la bandeja.
 - Mantén pulsada una pieza en la bandeja para dejarla **fijada**: cada toque en el lienzo coloca una copia. Vuelve a tocarla en la bandeja (o toca otra pieza) para deseleccionarla.
 - Toca una pieza ya colocada para seleccionarla. Los botones flotantes permiten rotarla, duplicarla, cambiar su longitud (rampas) o borrarla. Cada pieza nueva recibe un color aleatorio de la paleta.
@@ -19,8 +20,8 @@ La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al do
 - Cambia a la canica y toca el lienzo para soltar una; mantén pulsado para hacer lluvia.
 - Dos dedos para mover y hacer zoom.
 - Todas las piezas y canicas están disponibles desde el principio. No hay tienda.
-- En Ajustes > Mundos puedes cambiar entre cuatro escenarios con fondos detallados: Normal, Fondo marino, Cielo y Espacio.
-- La **Fábrica de burbujas** atrapa la canica en un aro de jabón y la hace flotar. El **Ventilador** puede desviarla y la burbuja estalla al tocar cualquier pieza, lo que permite crear tramos aéreos.
+- En Ajustes > Mundos puedes cambiar entre cinco escenarios con fondos detallados: Normal, Fondo marino, Cielo, Espacio y Volcán.
+- La **Fábrica de burbujas** atrapa la canica en un aro de jabón y la hace flotar. El **Ventilador** puede desviarla y la burbuja estalla al tocar cualquier pieza, lo que permite crear tramos aéreos. Si la canica azul entra en una burbuja, todas las canicas azules del lienzo se meten en burbuja a la vez.
 - Los extremos de las rampas, curvas, embudos, cintas, espirales, fábricas de burbujas, ventiladores y propulsores se **imantan** al acercarlos, sin cambiar su rotación.
 - El **Balancín** se inclina hacia el lado donde cae la canica: si el peso es suficiente, la hace rodar y caer por ese extremo.
 - El **Electroimán** atrae o repele las canicas cercanas. Se cambia de polaridad con el botón de imán al seleccionarlo o tocándolo directamente en modo Jugar; las canicas de acero responden con mucha más fuerza.
@@ -30,7 +31,7 @@ La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al do
 - La **Canica arcoíris** tiene un 10% de posibilidades de hacer explotar a cualquier canica con la que choque. Esas explosiones lanzan fuegos artificiales el triple de grandes.
 - El sonido está siempre activado; no hay control de volumen.
 - Los portales pueden separar sus dos agujeros con el botón de tamaño.
-- En ajustes, “Borrar canvas” vacía el escenario actual; puedes deshacerlo.
+- En ajustes, “Borrar” vacía el escenario actual; puedes deshacerlo. Cada borrado guarda la partida en una cola de las 5 últimas, accesible desde Ajustes > Partidas (1 a 5).
 
 ## Desarrollo
 

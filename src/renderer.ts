@@ -238,11 +238,13 @@ export class Renderer {
     const py = clamp(-cam.y * 0.018, -70, 70);
     const pulse = 0.5 + 0.5 * Math.sin(now * 0.00022);
     const space = theme.kind === 'space';
+    const volcano = theme.kind === 'volcano';
+    const warm = space ? '120,150,255' : volcano ? '255,120,50' : '255,252,242';
 
     const g1 = ctx.createRadialGradient(w * 0.26 + px, h * 0.1 + py, 0, w * 0.26 + px, h * 0.1 + py, Math.max(w, h) * 0.95);
     g1.addColorStop(0, theme.light);
-    g1.addColorStop(0.55, space ? 'rgba(120,150,255,0.045)' : 'rgba(255,252,242,0.09)');
-    g1.addColorStop(1, space ? 'rgba(120,150,255,0)' : 'rgba(255,252,242,0)');
+    g1.addColorStop(0.55, `rgba(${warm},${space ? 0.045 : volcano ? 0.07 : 0.09})`);
+    g1.addColorStop(1, `rgba(${warm},0)`);
     ctx.fillStyle = g1;
     ctx.fillRect(0, 0, w, h);
 
@@ -529,6 +531,104 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(cx, cy, 2.2, 0, TAU);
       ctx.fill();
+      return;
+    }
+
+    if (kind === 'volcano') {
+      // Halo de lava que respira desde la base.
+      const glow = ctx.createRadialGradient(
+        w * 0.5,
+        h * 1.04,
+        0,
+        w * 0.5,
+        h * 1.04,
+        Math.max(w, h) * 0.82
+      );
+      glow.addColorStop(0, `rgba(255,110,40,${0.2 + pulse * 0.07})`);
+      glow.addColorStop(0.5, 'rgba(190,50,20,0.075)');
+      glow.addColorStop(1, 'rgba(190,50,20,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, w, h);
+
+      // Grietas magmáticas: trazos finos con brillo anaranjado y ramas.
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      const crack = (pts: { x: number; y: number }[], width: number) => {
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k].x, pts[k].y);
+        ctx.strokeStyle = 'rgba(55,8,6,0.7)';
+        ctx.lineWidth = width + 5;
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(255,84,26,${0.2 + pulse * 0.14})`;
+        ctx.lineWidth = width;
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(255,206,132,${0.32 + pulse * 0.2})`;
+        ctx.lineWidth = Math.max(1, width * 0.36);
+        ctx.stroke();
+      };
+      for (let i = 0; i < 13; i++) {
+        const seed = hash2(i + 61, 29);
+        let x = ((seed % 1000) / 1000) * w;
+        let y = (((seed >>> 9) % 1000) / 1000) * h;
+        let a = ((seed >>> 18) % 360) * (Math.PI / 180);
+        const pts = [{ x, y }];
+        for (let s = 0; s < 8; s++) {
+          a += ((((seed >>> (s * 3)) % 100) / 100) - 0.5) * 1.15;
+          const step = 12 + ((seed >>> ((s + 2) * 2)) % 26);
+          x += Math.cos(a) * step;
+          y += Math.sin(a) * step;
+          pts.push({ x, y });
+        }
+        crack(pts, 1.6 + ((seed >>> 7) % 18) / 10);
+
+        // Rama corta que nace de un punto intermedio.
+        const base = pts[2 + (seed % 4)];
+        let ba = a + (seed % 2 ? 1 : -1) * (0.7 + ((seed >>> 11) % 50) / 100);
+        let bx = base.x;
+        let by = base.y;
+        const branch = [{ x: bx, y: by }];
+        for (let s = 0; s < 4; s++) {
+          ba += ((((seed >>> (s * 4 + 3)) % 100) / 100) - 0.5) * 1.4;
+          bx += Math.cos(ba) * (10 + ((seed >>> (s + 5)) % 16));
+          by += Math.sin(ba) * (10 + ((seed >>> (s + 5)) % 16));
+          branch.push({ x: bx, y: by });
+        }
+        crack(branch, 1.1);
+      }
+      ctx.restore();
+
+      // Brasas que suben lentamente.
+      for (let i = 0; i < 26; i++) {
+        const seed = hash2(i + 5, 41);
+        const x = ((seed % 1000) / 1000) * w + ox * 0.5;
+        const baseY = ((seed >>> 8) % 1000) / 1000;
+        const y = ((baseY * h - now * 0.012 - i * 13) % (h + 60) + h + 60) % (h + 60) - 30;
+        const flicker = 0.25 + 0.55 * (0.5 + 0.5 * Math.sin(now * 0.002 + i * 2.3));
+        const r = 1 + ((seed >>> 17) % 3) * 0.7;
+        ctx.fillStyle = `rgba(255,${140 + (seed % 60)},60,${flicker * 0.5})`;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, TAU);
+        ctx.fill();
+      }
+
+      // Lago de lava en el borde inferior.
+      const lava = ctx.createLinearGradient(0, h * 0.84, 0, h);
+      lava.addColorStop(0, 'rgba(255,90,30,0)');
+      lava.addColorStop(1, 'rgba(255,90,30,0.16)');
+      ctx.fillStyle = lava;
+      ctx.fillRect(0, h * 0.84, w, h * 0.16);
+      ctx.strokeStyle = `rgba(255,170,90,${0.16 + pulse * 0.1})`;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      for (let x = -20; x <= w + 20; x += 16) {
+        const y = h - 16 + Math.sin(x * 0.016 + now * 0.0009) * 4 + Math.sin(x * 0.041) * 1.6;
+        if (x === -20) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
       return;
     }
 

@@ -1,4 +1,4 @@
-export type WorldKind = 'studio' | 'ocean' | 'sky' | 'space';
+export type WorldKind = 'studio' | 'ocean' | 'sky' | 'space' | 'volcano';
 
 export interface WorldTheme {
   id: string;
@@ -67,6 +67,19 @@ export const WORLD_THEMES: WorldTheme[] = [
     accent: '#7D5BA6',
     light: 'rgba(110,140,255,0.14)',
     shade: 'rgba(0,0,0,0.34)'
+  },
+  {
+    id: 'volcano',
+    name: 'Volcán',
+    kind: 'volcano',
+    paper: '#21100D',
+    paper2: '#2C150F',
+    grid: 'rgba(255,150,90,0.16)',
+    ink: '#FFE7D2',
+    inkSoft: '#E7B69B',
+    accent: '#FF6B35',
+    light: 'rgba(255,120,50,0.17)',
+    shade: 'rgba(0,0,0,0.38)'
   }
 ];
 

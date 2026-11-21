@@ -388,7 +388,16 @@ export class UI {
       <div class="set-label">Mundos</div>
       <div class="set-value world-dots">${worldDots}<span class="world-now">${worldName}</span></div>
     </div>`);
-    rows.push(this.buildRow('trash', 'Borrar canvas', '', 'clear', 'reset-row'));
+    const saveSlots = Array.from({ length: 5 }, (_, i) => {
+      const has = !!this.game.snapshots[i];
+      return `<button class="save-slot${has ? '' : ' is-empty'}" data-slot="${i}"${has ? '' : ' disabled'} aria-label="Cargar partida ${i + 1}">${i + 1}</button>`;
+    }).join('');
+    rows.push(`<div class="set-row">
+      <div class="set-ic">${icon('reset')}</div>
+      <div class="set-label">Partidas</div>
+      <div class="set-value save-slots">${saveSlots}</div>
+    </div>`);
+    rows.push(this.buildRow('trash', 'Borrar', '', 'clear', 'reset-row'));
     rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.10 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
@@ -417,6 +426,14 @@ export class UI {
         const i = Number(dot.dataset.world);
         this.game.setWorld(i);
         this.toast('world', (WORLD_THEMES[i] ?? WORLD_THEMES[0]).name);
+        this.closeOverlays();
+      });
+    });
+    this.settingsBody.querySelectorAll<HTMLElement>('.save-slot:not(.is-empty)').forEach((slot) => {
+      slot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const i = Number(slot.dataset.slot);
+        if (this.game.loadSnapshot(i)) this.toast('check', `Partida ${i + 1}`);
         this.closeOverlays();
       });
     });
