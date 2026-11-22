@@ -1,12 +1,10 @@
 import type {
   Camera,
-  DropSummary,
   Marble,
   Mode,
   Particle,
   PhysEvent,
   Piece,
-  Popup,
   Records,
   SaveData,
   Settings,
@@ -37,23 +35,16 @@ import {
 import type { UI } from './ui';
 import { CAMERA_TILT, clamp, nowMs, prefersReducedMotion, vibrate } from './util';
 import { WORLD_THEMES } from './worlds';
+import { STRUCTURES, type StructurePiece } from './structures';
 
 const SAVE_KEY = 'marblelous.save.v1';
 const BACKUP_KEY = 'marblelous.backup.v1';
 const SNAPSHOTS_KEY = 'marblelous.snapshots.v1';
+const LAST_GAME_KEY = 'marblelous.lastgame.v1';
 const MAX_SNAPSHOTS = 5;
 /** La canica de cristal es la canica azul del juego. */
 const BLUE_MARBLE = 'crystal';
 const FIXED = 1 / 120;
-
-interface DropStats {
-  sparks: number;
-  notes: Set<number>;
-  goals: number;
-  maxCombo: number;
-  maxSpeed: number;
-  airTime: number;
-}
 
 export type Ghost =
   | { kind: 'piece'; defId: string; x: number; y: number; rot: number }
@@ -77,7 +68,6 @@ export class Game {
   pieces: Piece[] = [];
   marbles: Marble[] = [];
   particles: Particle[] = [];
-  popups: Popup[] = [];
   camera: Camera = { x: 0, y: 0, zoom: 1 };
   viewW = window.innerWidth;
   viewH = window.innerHeight;
@@ -103,6 +93,10 @@ export class Game {
   activeWorld = 0;
   /** Últimas partidas borradas; la más reciente al final. */
   snapshots: SaveData[] = [];
+  /** Última partida no vacía guardada, recuperable desde el menú. */
+  private lastSession: SaveData | null = null;
+  /** La sesión actual ya nació de una partida guardada o de piezas nuevas. */
+  private sessionEngaged = false;
   records: Records = {
     combo: 1,
     speed: 0,
@@ -116,9 +110,6 @@ export class Game {
     haptics: false
   };
 
-  comboChain = 0;
-  comboMultiplier = 1;
-  comboAt = -10000;
   private history: History[] = [];
   private redoStack: History[] = [];
   private nextId = 1;
@@ -127,12 +118,7 @@ export class Game {
   private last = 0;
   private lastSave = 0;
   private dirty = false;
-  private lastSpawn = 0;
-  private dropActive = false;
-  private dropId = 0;
-  private dropStats: DropStats = this.emptyStats();
   private cooldowns = new Map<string, number>();
-  private lastUiSave = 0;
   private lastSnapKey = '';
   private lastSnapAt = 0;
   private dragStartRot = 0;
@@ -171,15 +157,12 @@ export class Game {
     return this.redoStack.length > 0;
   }
 
-  private emptyStats(): DropStats {
-    return {
-      sparks: 0,
-      notes: new Set<number>(),
-      goals: 0,
-      maxCombo: 1,
-      maxSpeed: 0,
-      airTime: 0
-    };
+  get hasLastSession() {
+    return !!this.lastSession;
+  }
+
+  get lastSessionAt() {
+    return this.lastSession?.updatedAt ?? 0;
   }
 
   private rebuildPhysics() {
@@ -225,7 +208,6 @@ export class Game {
       this.updateFactories(now);
       this.updateEffects(raw * this.timeScale, now);
       this.updateBubbles(now);
-      this.updateDrop(now);
       this.updateRecords(now);
       this.maybeSave(now);
       if (this.hudDirty) {
@@ -809,6 +791,7 @@ export class Game {
   clearCanvas() {
     if (this.pieces.length === 0 && this.marbles.length === 0) return;
     this.archiveGame();
+    this.sessionEngaged = true;
     this.history.push({ type: 'clear', pieces: this.pieces });
     this.history = this.history.slice(-60);
     this.redoStack.length = 0;
@@ -817,7 +800,6 @@ export class Game {
     this.worlds[this.activeWorld].pieces = this.pieces;
     this.marbles = [];
     this.particles = [];
-    this.popups = [];
     this.selectedPieceId = 0;
     this.armedDefId = '';
     this.ghost = null;
@@ -837,7 +819,11 @@ export class Game {
 
   /** Guarda el estado actual en la cola de partidas borradas. */
   private archiveGame() {
-    this.snapshots.push(this.buildSaveData());
+    this.archiveSave(this.buildSaveData());
+  }
+
+  private archiveSave(data: SaveData) {
+    this.snapshots.push(data);
     if (this.snapshots.length > MAX_SNAPSHOTS) {
       this.snapshots.splice(0, this.snapshots.length - MAX_SNAPSHOTS);
     }
@@ -847,6 +833,10 @@ export class Game {
   loadSnapshot(index: number) {
     const snapshot = this.snapshots[index];
     if (!snapshot) return false;
+    if (this.pieces.length || this.marbles.length) {
+      this.archiveGame();
+      this.sessionEngaged = true;
+    }
     try {
       this.applySave(this.normalize(snapshot, this.defaults()));
     } catch {
@@ -854,7 +844,6 @@ export class Game {
     }
     this.marbles = [];
     this.particles = [];
-    this.popups = [];
     this.history = [];
     this.redoStack = [];
     this.selectedPieceId = 0;
@@ -864,7 +853,6 @@ export class Game {
     this.dropPreview = null;
     this.timeScale = 1;
     this.slowUntil = 0;
-    this.dropActive = false;
     document.body.classList.remove('armed');
     this.rebuildPhysics();
     this.physics.clearDisabled();
@@ -872,6 +860,92 @@ export class Game {
     this.save();
     this.ui?.refreshAll();
     return true;
+  }
+
+  /** Recupera la última partida no vacía guardada, desde Ajustes. */
+  resumeLastSession(): boolean {
+    const last = this.lastSession;
+    if (!last) return false;
+    if (this.pieces.length || this.marbles.length) {
+      this.archiveGame();
+      this.sessionEngaged = true;
+    }
+    try {
+      this.applySave(this.normalize(last, this.defaults()));
+    } catch {
+      return false;
+    }
+    this.sessionEngaged = true;
+    this.marbles = [];
+    this.particles = [];
+    this.history = [];
+    this.redoStack = [];
+    this.selectedPieceId = 0;
+    this.armedDefId = '';
+    this.armedSticky = false;
+    this.ghost = null;
+    this.dropPreview = null;
+    this.timeScale = 1;
+    this.slowUntil = 0;
+    this.mode = 'build';
+    document.body.classList.remove('armed');
+    this.rebuildPhysics();
+    this.physics.clearDisabled();
+    this.dirty = true;
+    this.save();
+    this.ui?.refreshAll();
+    return true;
+  }
+
+  /** Carga una de las composiciones catalogadas en Ajustes > Estructuras. */
+  loadStructure(index: number): boolean {
+    const def = STRUCTURES[index];
+    if (!def) return false;
+    if (this.pieces.length || this.marbles.length) {
+      this.archiveGame();
+      this.sessionEngaged = true;
+    }
+    this.marbles = [];
+    this.particles = [];
+    this.history = [];
+    this.redoStack = [];
+    this.selectedPieceId = 0;
+    this.armedDefId = '';
+    this.armedSticky = false;
+    this.ghost = null;
+    this.dropPreview = null;
+    this.timeScale = 1;
+    this.slowUntil = 0;
+    this.nextId = 1;
+    this.pieces = def.pieces.map((sp) => this.makeStructurePiece(sp));
+    this.bumpPieces();
+    this.worlds[this.activeWorld].pieces = this.pieces;
+    this.mode = 'build';
+    document.body.classList.remove('armed');
+    this.rebuildPhysics();
+    this.physics.clearDisabled();
+    this.recenter();
+    this.dirty = true;
+    this.save();
+    this.ui?.refreshAll();
+    return true;
+  }
+
+  private makeStructurePiece(sp: StructurePiece): Piece {
+    const def = getPieceDef(sp.defId);
+    return {
+      id: this.nextId++,
+      defId: sp.defId,
+      x: sp.x,
+      y: sp.y,
+      rot: sp.rot ?? 0,
+      len: sp.len ?? defaultLen(sp.defId),
+      color: sp.color ?? def.defaultColor,
+      variant: sp.variant ?? 0,
+      polarity: sp.defId === 'electromagnet' ? (sp.polarity ?? 1) : undefined,
+      powered: sp.defId === 'marbleFactory' ? sp.powered !== false : undefined,
+      bornAt: performance.now()
+    };
   }
 
   private loadSnapshots() {
@@ -973,20 +1047,12 @@ export class Game {
       }
     }
     const type = MARBLE_BY_ID.get(chosen) ?? MARBLE_TYPES[0];
-    if (!this.dropActive) {
-      this.dropActive = true;
-      this.dropId++;
-      this.dropStats = this.emptyStats();
-    }
-    const m = createMarble(this.nextMarbleId++, type, x, y, this.dropId, nowMs());
+    const m = createMarble(this.nextMarbleId++, type, x, y, 0, nowMs());
     this.marbles.push(m);
-    this.lastSpawn = nowMs();
     if (this.selectedMarble !== 'surprise' && this.selectedMarble !== chosen) {
       this.selectedMarble = chosen;
       this.ui?.refreshTray();
     }
-    this.records.marbles = Math.max(this.records.marbles, this.marbles.length);
-    this.dropStats.maxSpeed = Math.max(this.dropStats.maxSpeed, 0);
     this.spawnBurst(x, y, type.color, 4, 0);
     this.dirty = true;
     return m;
@@ -1044,8 +1110,6 @@ export class Game {
         }
         this.audio.playChime(e.note, e.impact, pan);
         this.spawnBurst(e.x, e.y, NOTE_COLORS[e.note] ?? PALETTE.yellow, 5, 1);
-        this.dropStats.notes.add(e.note);
-        this.score(5, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'hourglass') {
         const p = this.pieces.find((x) => x.id === e.pieceId);
         this.slowUntil = Math.max(this.slowUntil, now + 5000);
@@ -1071,7 +1135,6 @@ export class Game {
         this.spawnBurst(e.x, e.y, PALETTE.yellow, 18, 2);
         this.spawnBurst(e.x, e.y, PALETTE.paper3, 12, 1);
         this.spawnBurst(e.x, e.y, PALETTE.teal, 8, 0);
-        this.score(25, e.x, e.y, e.marbleId, now);
         this.ui?.flash(0.18);
       } else if (e.type === 'bumper') {
         if (!this.allow(`bump:${e.marbleId}:${e.pieceId}`, 240, now)) continue;
@@ -1079,18 +1142,15 @@ export class Game {
         if (p) p.flash = now;
         this.audio.bumper(pan);
         this.spawnBurst(e.x, e.y, PALETTE.teal, 6, 1);
-        this.score(10, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'cannon') {
         this.audio.cannon(pan);
         this.spawnBurst(e.x, e.y, PALETTE.purple, 5, 0);
-        this.score(2, e.x, e.y, e.marbleId, now);
         const m = this.marbles.find((x) => x.id === e.marbleId);
         if (m && m.alive && m.typeId === 'plasma') this.splitPlasma(m, e, now);
       } else if (e.type === 'boost') {
         if (!this.allow(`boost:${e.marbleId}:${e.pieceId}`, 500, now)) continue;
         this.audio.boost(pan);
         this.spawnBurst(e.x, e.y, PALETTE.teal, 3, 0);
-        this.score(2, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'spiral') {
         this.audio.portal(pan);
         this.spawnBurst(e.x, e.y, PALETTE.teal, 8, 1);
@@ -1098,27 +1158,21 @@ export class Game {
         this.audio.bubble(pan);
         this.spawnBurst(e.x, e.y, '#8FD3EE', 12, 1);
         this.spawnBurst(e.x, e.y, PALETTE.paper3, 6, 0);
-        this.score(6, e.x, e.y, e.marbleId, now);
         this.bubbleBlueMarbles(e.marbleId);
       } else if (e.type === 'pop') {
         this.audio.pop(pan);
         this.spawnBurst(e.x, e.y, PALETTE.paper3, 8, 0);
         this.spawnBurst(e.x, e.y, '#8FD3EE', 7, 1);
-        this.score(3, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'portal') {
         this.audio.portal(pan);
         this.spawnBurst(e.x, e.y, PALETTE.purple, 10, 1);
         this.spawnBurst(e.x, e.y, PALETTE.teal, 6, 0);
-        this.score(5, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'goal') {
         const m = this.marbles.find((x) => x.id === e.marbleId);
         this.audio.goal(pan);
         const p = this.pieces.find((x) => x.id === e.pieceId);
         if (p) p.anim = now;
         this.spawnConfetti(e.x, e.y - 20);
-        this.dropStats.goals++;
-        this.records.goals++;
-        this.score(120, e.x, e.y, e.marbleId, now);
         if (m) m.alive = false;
         this.ui?.flash(0.22);
         if (this.settings.haptics) vibrate(18);
@@ -1127,13 +1181,8 @@ export class Game {
         this.spawnBurst(e.x, e.y, PALETTE.yellow, 12, 1);
         const p = this.pieces.find((x) => x.id === e.pieceId);
         if (p) p.disabledUntil = now + 5000;
-        this.score(15, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'air') {
-        const secs = e.impact / 1000;
-        const pts = Math.min(60, Math.round((secs - 1.2) * 20));
-        this.dropStats.airTime = Math.max(this.dropStats.airTime, e.impact);
         this.records.airTime = Math.max(this.records.airTime, e.impact);
-        if (pts > 0) this.score(pts, e.x, e.y, e.marbleId, now);
       } else if (e.type === 'marble') {
         if (!this.allow(`marble:${e.marbleId}`, 100, now)) continue;
         this.audio.impact('brick', e.impact * 0.55, pan);
@@ -1141,7 +1190,6 @@ export class Game {
       } else if (e.type === 'rainbow') {
         this.spawnFireworks(e.x, e.y, 3);
         this.audio.firework(pan);
-        this.score(80, e.x, e.y, e.marbleId, now);
         this.ui?.flash(0.3);
       }
     }
@@ -1166,7 +1214,7 @@ export class Game {
       type,
       e.x + nx * m.r * 1.2,
       e.y + ny * m.r * 1.2,
-      this.dropId,
+      0,
       now
     );
     clone.vx = Math.cos(ang + spread) * speed;
@@ -1177,7 +1225,6 @@ export class Game {
     this.marbles.push(clone);
     this.spawnBurst(e.x, e.y, type.color, 8, 1);
     this.spawnBurst(e.x, e.y, type.glow ?? PALETTE.teal, 6, 0);
-    this.records.marbles = Math.max(this.records.marbles, this.marbles.length);
     this.dirty = true;
   }
 
@@ -1204,25 +1251,6 @@ export class Game {
     }
   }
 
-  private score(base: number, x: number, y: number, marbleId: number, now: number) {
-    if (now - this.comboAt > 2500) this.comboChain = 0;
-    this.comboAt = now;
-    this.comboChain++;
-    this.comboMultiplier = Math.min(5, 1 + 0.25 * Math.floor(this.comboChain / 5));
-    const m = this.marbles.find((mm) => mm.id === marbleId);
-    const type = m ? MARBLE_BY_ID.get(m.typeId) : undefined;
-    const bonus = type?.bonus ?? 1;
-    const pts = Math.max(1, Math.round(base * this.comboMultiplier * bonus));
-    this.currency += pts;
-    this.lifetime += pts;
-    this.dropStats.sparks += pts;
-    this.dropStats.maxCombo = Math.max(this.dropStats.maxCombo, this.comboMultiplier);
-    this.records.combo = Math.max(this.records.combo, this.comboMultiplier);
-    this.spawnPopup(x, y - 14, `+${pts}`);
-    this.dirty = true;
-    this.requestHud();
-  }
-
   private updateRecords(now: number) {
     let max = 0;
     for (const m of this.marbles) {
@@ -1242,25 +1270,6 @@ export class Game {
       this.records.speed = max;
       this.dirty = true;
     }
-    if (this.dropStats.maxSpeed < max) this.dropStats.maxSpeed = max;
-    if (now - this.comboAt > 2500 && this.comboChain !== 0) {
-      this.comboChain = 0;
-      this.requestHud();
-    }
-    if (now - this.lastUiSave > 500) {
-      this.lastUiSave = now;
-      this.requestHud();
-    }
-  }
-
-  private addBonus(points: number, x: number, y: number) {
-    this.currency += points;
-    this.lifetime += points;
-    this.dropStats.sparks += points;
-    this.spawnPopup(x, y - 16, `+${points}`);
-    this.requestHud();
-    this.dirty = true;
-    this.requestSave();
   }
 
   /** Las fábricas de canicas encendidas emiten una canica por segundo. */
@@ -1293,13 +1302,12 @@ export class Game {
     const s = Math.sin(p.rot);
     const x = p.x + FACTORY_OUTLET.x * c - FACTORY_OUTLET.y * s;
     const y = p.y + FACTORY_OUTLET.x * s + FACTORY_OUTLET.y * c;
-    const m = createMarble(this.nextMarbleId++, type, x, y, this.dropId, now);
+    const m = createMarble(this.nextMarbleId++, type, x, y, 0, now);
     m.vx = (Math.random() - 0.5) * 24;
     m.vy = 30;
     m.auto = true;
     this.marbles.push(m);
     p.anim = now;
-    this.records.marbles = Math.max(this.records.marbles, this.marbles.length);
     this.spawnBurst(x, y, type.color, 3, 0);
     this.audio.impact('metal', 300, this.panForX(x));
     this.dirty = true;
@@ -1355,37 +1363,7 @@ export class Game {
     this.spawnBurst(p.x, p.y, '#BFE9FF', 18, 2);
     this.spawnBurst(p.x, p.y, PALETTE.paper3, 8, 2);
     this.spawnBurst(p.x, p.y, PALETTE.teal, 6, 1);
-    this.addBonus(30, p.x, p.y);
     this.ui?.flash(0.12);
-  }
-
-  private updateDrop(now: number) {
-    if (!this.dropActive) return;
-    if (this.marbles.length === 0) {
-      if (now - this.lastSpawn > 1400) this.endDrop();
-      return;
-    }
-    let awake = false;
-    for (const m of this.marbles) if (m.alive && m.awake && !m.auto) awake = true;
-    if (!awake && now - this.lastSpawn > 2200) this.endDrop();
-  }
-
-  private endDrop() {
-    if (!this.dropActive) return;
-    this.dropActive = false;
-    const stats = this.dropStats;
-    this.records.bestDrop = Math.max(this.records.bestDrop, stats.sparks);
-    if (stats.sparks > 0 || stats.notes.size > 0) {
-      const summary: DropSummary = {
-        sparks: stats.sparks,
-        notes: stats.notes.size,
-        goals: stats.goals,
-        bestCombo: stats.maxCombo
-      };
-      this.ui?.showSummary(summary);
-    }
-    this.dirty = true;
-    this.requestSave();
   }
 
   // ---------------- effects ----------------
@@ -1424,7 +1402,6 @@ export class Game {
     }
     this.spawnBurst(x, y - 10 * scale, PALETTE.paper3, 10, 1, scale);
     this.spawnConfetti(x, y - 24 * scale, scale);
-    this.ui?.toast('spark', '¡Fuegos!');
   }
 
   spawnConfetti(x: number, y: number, scale = 1) {
@@ -1450,19 +1427,6 @@ export class Game {
     if (this.particles.length > 260) this.particles.splice(0, this.particles.length - 260);
   }
 
-  spawnPopup(x: number, y: number, text: string) {
-    this.popups.push({
-      x,
-      y,
-      text,
-      life: 0.95,
-      maxLife: 0.95,
-      color: PALETTE.ink,
-      size: 18
-    });
-    if (this.popups.length > 7) this.popups.shift();
-  }
-
   private updateEffects(dt: number, now: number) {
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
@@ -1477,12 +1441,6 @@ export class Game {
       p.vx *= Math.exp(-1.4 * dt);
       p.rot += p.vr * dt;
       p.alpha = Math.min(1, p.life / 0.2);
-    }
-    for (let i = this.popups.length - 1; i >= 0; i--) {
-      const p = this.popups[i];
-      p.life -= dt;
-      p.y -= 26 * dt;
-      if (p.life <= 0) this.popups.splice(i, 1);
     }
     // trim trails of sleeping marbles
     for (const m of this.marbles) {
@@ -1562,43 +1520,83 @@ export class Game {
       localStorage.removeItem(SAVE_KEY);
       localStorage.removeItem(BACKUP_KEY);
       localStorage.removeItem(SNAPSHOTS_KEY);
+      localStorage.removeItem(LAST_GAME_KEY);
     } catch {
       /* noop */
     }
+    this.lastSession = null;
     location.reload();
   }
 
   // ---------------- persistence ----------------
 
+  private readSave(key: string): SaveData | null {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const data = JSON.parse(raw) as SaveData;
+      return data && typeof data === 'object' ? data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private saveHasPieces(data: SaveData): boolean {
+    return data.worlds.some((w) => (w.pieces?.length ?? 0) > 0);
+  }
+
+  private persistLastSession(data: SaveData) {
+    try {
+      localStorage.setItem(LAST_GAME_KEY, JSON.stringify(data));
+    } catch {
+      /* sin espacio: la partida sigue en memoria hasta cerrar */
+    }
+  }
+
+  /**
+   * El taller arranca siempre vacío y en el cielo. La última partida no vacía
+   * se conserva aparte para poder reanudarla desde Ajustes.
+   */
   private load() {
     const fallback = this.defaults();
-    this.fresh = false;
-    let data: SaveData | null = null;
-    try {
-      const raw = localStorage.getItem(SAVE_KEY);
-      if (raw) data = JSON.parse(raw) as SaveData;
-    } catch {
-      data = null;
-    }
-    if (!data) {
+    this.fresh = true;
+    const live = this.readSave(SAVE_KEY) ?? this.readSave(BACKUP_KEY);
+    let preferences: SaveData | null = null;
+    if (live) {
       try {
-        const raw = localStorage.getItem(BACKUP_KEY);
-        if (raw) data = JSON.parse(raw) as SaveData;
+        const normalized = this.normalize(live, fallback);
+        preferences = normalized;
+        if (this.saveHasPieces(normalized)) {
+          this.lastSession = normalized;
+          this.persistLastSession(normalized);
+        }
       } catch {
-        data = null;
+        /* partida corrupta */
       }
     }
-    if (!data || typeof data !== 'object') {
-      this.fresh = true;
-      this.applySave(fallback);
-      return;
+    if (!this.lastSession) {
+      const previous = this.readSave(LAST_GAME_KEY);
+      if (previous) {
+        try {
+          const normalized = this.normalize(previous, fallback);
+          if (this.saveHasPieces(normalized)) this.lastSession = normalized;
+        } catch {
+          /* ignorar */
+        }
+      }
     }
-    try {
-      this.applySave(this.normalize(data, fallback));
-    } catch {
-      this.fresh = true;
-      this.applySave(fallback);
+    if (!preferences && this.lastSession) preferences = this.lastSession;
+    const fresh = this.defaults();
+    if (preferences) {
+      fresh.owned = preferences.owned;
+      fresh.selectedMarble = preferences.selectedMarble;
+      fresh.settings = preferences.settings;
+      fresh.currency = preferences.currency;
+      fresh.lifetime = preferences.lifetime;
     }
+    this.applySave(fresh);
+    // Guarda el lienzo vacío para no volver a leer la partida anterior al abrir.
+    this.save();
   }
 
   private defaults(): SaveData {
@@ -1607,14 +1605,14 @@ export class Game {
       camera: { x: 0, y: 0, zoom: 1 },
       records: { combo: 1, speed: 0, airTime: 0, marbles: 0, bestDrop: 0, goals: 0 }
     });
-    const space = Math.max(0, WORLD_THEMES.findIndex((t) => t.kind === 'space'));
+    const sky = Math.max(0, WORLD_THEMES.findIndex((t) => t.id === 'sky'));
     return {
       v: 1,
       updatedAt: Date.now(),
       currency: 0,
       lifetime: 0,
       owned: [...STARTING_OWNED],
-      activeWorld: space,
+      activeWorld: sky,
       worlds: WORLD_THEMES.map(() => empty()),
       settings: {
         quality: 'auto',
@@ -1667,7 +1665,7 @@ export class Game {
     for (const id of data.owned ?? []) if (PIECE_BY_ID.has(id) || MARBLE_BY_ID.has(id)) owned.add(id);
     return {
       v: 1,
-      updatedAt: Date.now(),
+      updatedAt: Number(data.updatedAt) || Date.now(),
       currency: Math.max(0, Number(data.currency) || 0),
       lifetime: Math.max(0, Number(data.lifetime) || 0),
       owned: [...owned],
@@ -1758,6 +1756,15 @@ export class Game {
       const prev = localStorage.getItem(SAVE_KEY);
       if (prev) localStorage.setItem(BACKUP_KEY, prev);
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+      if (this.saveHasPieces(data)) {
+        if (!this.sessionEngaged && this.lastSession) {
+          // La partida anterior queda a salvo en la cola de Partidas.
+          this.archiveSave(this.lastSession);
+        }
+        this.sessionEngaged = true;
+        this.lastSession = data;
+        localStorage.setItem(LAST_GAME_KEY, JSON.stringify(data));
+      }
       this.lastSave = performance.now();
       this.dirty = false;
     } catch {

@@ -1,4 +1,3 @@
-import type { DropSummary } from './types';
 import type { Game } from './game';
 import {
   FUNNEL_WIDTHS,
@@ -11,7 +10,8 @@ import {
 } from './pieces';
 import { drawPreview } from './art';
 import { WORLD_THEMES } from './worlds';
-import { clamp, fmt, icon, prefersReducedMotion, shortAngle } from './util';
+import { STRUCTURES } from './structures';
+import { clamp, icon, prefersReducedMotion, shortAngle } from './util';
 
 const $ = <T extends Element = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const $$ = (sel: string) => Array.from(document.querySelectorAll(sel)) as HTMLElement[];
@@ -21,9 +21,6 @@ type OverlayId = 'settings';
 export class UI {
   game: Game;
   tray = $('#tray');
-  combo = $('#combo');
-  comboMult = $('#combo-mult');
-  comboRing = $('.combo-ring');
   selection = $('#selection-ui');
   selRotate = $('#sel-rotate');
   selSize = $('#sel-size');
@@ -35,11 +32,9 @@ export class UI {
   settings = $('#settings');
   settingsBody = $('#settings-body');
   toastEl = $('#toast');
-  summaryEl = $('#summary');
   flashEl = $('#flash');
 
   private toastTimer = 0;
-  private summaryTimer = 0;
   private longPressTimer = 0;
   private longPressId = '';
   private longPressFired = false;
@@ -48,7 +43,6 @@ export class UI {
   private lastSelLeft = -1;
   private lastSelTop = -1;
   private lastCapacity = -1;
-  private lastComboKey = '';
   private rotating: {
     pieceId: number;
     center: { x: number; y: number };
@@ -228,17 +222,6 @@ export class UI {
       this.capacity.classList.toggle('is-hidden', cap < 1800);
       this.capacityNum.textContent = `${cap}`;
     }
-    const now = performance.now();
-    const showCombo = this.game.comboChain > 0 && now - this.game.comboAt < 2500;
-    const mult = this.game.comboMultiplier;
-    const key = showCombo ? `${this.game.comboChain}|${mult}` : 'hidden';
-    if (key === this.lastComboKey) return;
-    this.lastComboKey = key;
-    this.combo.classList.toggle('is-hidden', !showCombo);
-    if (!showCombo) return;
-    const pct = clamp((this.game.comboChain / 80) * 100, 0, 100);
-    this.comboRing.style.setProperty('--combo', `${pct}`);
-    this.comboMult.textContent = `×${Number.isInteger(mult) ? mult : mult.toFixed(2).replace('0', '')}`;
   }
 
   refreshMode() {
@@ -283,11 +266,8 @@ export class UI {
     this.tray.scrollLeft = scroll;
   }
 
-  tick(now: number) {
+  tick(_now: number) {
     this.updateSelection();
-    if (this.game.comboChain > 0 && now - this.game.comboAt > 2500) {
-      this.combo.classList.add('is-hidden');
-    }
   }
 
   updateSelection() {
@@ -425,6 +405,16 @@ export class UI {
     return out;
   }
 
+  private savedAt(ts: number) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+      return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
+    return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+  }
+
   refreshSettings() {
     if (this.settings.classList.contains('is-hidden')) return;
     const s = this.game.settings;
@@ -440,19 +430,44 @@ export class UI {
       })
       .join('');
     const worldName = (WORLD_THEMES[this.game.activeWorld] ?? WORLD_THEMES[0]).name;
-    rows.push(`<div class="set-row">
+    rows.push(`<div class="set-row wide">
       <div class="set-ic">${icon('world')}</div>
       <div class="set-label">Mundos</div>
       <div class="set-value world-dots">${worldDots}<span class="world-now">${worldName}</span></div>
     </div>`);
+    if (this.game.hasLastSession) {
+      rows.push(
+        this.buildRow(
+          'play',
+          'Última partida',
+          `<span class="resume-meta">${this.savedAt(this.game.lastSessionAt)}</span><span class="resume-pill">Reanudar</span>`,
+          'resume'
+        )
+      );
+    } else {
+      rows.push(`<div class="set-row is-dim">
+        <div class="set-ic">${icon('play')}</div>
+        <div class="set-label">Última partida</div>
+        <div class="set-value"><span class="resume-empty">Sin partida</span></div>
+      </div>`);
+    }
     const saveSlots = Array.from({ length: 5 }, (_, i) => {
       const has = !!this.game.snapshots[i];
       return `<button class="save-slot${has ? '' : ' is-empty'}" data-slot="${i}"${has ? '' : ' disabled'} aria-label="Cargar partida ${i + 1}">${i + 1}</button>`;
     }).join('');
-    rows.push(`<div class="set-row">
+    rows.push(`<div class="set-row wide">
       <div class="set-ic">${icon('reset')}</div>
       <div class="set-label">Partidas</div>
       <div class="set-value save-slots">${saveSlots}</div>
+    </div>`);
+    const structureSlots = STRUCTURES.map(
+      (s, i) =>
+        `<button class="structure-slot" data-structure="${i}" title="${s.name} · ${s.blurb}" aria-label="Cargar estructura ${i + 1}: ${s.name}">${i + 1}</button>`
+    ).join('');
+    rows.push(`<div class="set-row wide">
+      <div class="set-ic">${icon('layers')}</div>
+      <div class="set-label">Estructuras</div>
+      <div class="set-value structure-slots">${structureSlots}</div>
     </div>`);
     rows.push(this.buildRow('trash', 'Borrar', '', 'clear', 'reset-row'));
     rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.11 · sin datos · sin red</span></div>`);
@@ -463,7 +478,12 @@ export class UI {
       row.addEventListener('click', () => {
         if (action === 'quality') this.game.cycleQuality();
         else if (action === 'haptics') this.game.toggleHaptics();
-        else if (action === 'clear') {
+        else if (action === 'resume') {
+          if (this.game.resumeLastSession()) {
+            this.closeOverlays();
+            return;
+          }
+        } else if (action === 'clear') {
           this.game.clearCanvas();
           this.closeOverlays();
         }
@@ -494,6 +514,13 @@ export class UI {
         this.closeOverlays();
       });
     });
+    this.settingsBody.querySelectorAll<HTMLElement>('.structure-slot').forEach((slot) => {
+      slot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const i = Number(slot.dataset.structure);
+        if (this.game.loadStructure(i)) this.closeOverlays();
+      });
+    });
   }
 
   // ---------------- feedback ----------------
@@ -508,23 +535,6 @@ export class UI {
       this.toastEl.classList.remove('show');
       window.setTimeout(() => this.toastEl.classList.add('is-hidden'), 220);
     }, 1900);
-  }
-
-  showSummary(s: DropSummary) {
-    clearTimeout(this.summaryTimer);
-    this.summaryEl.innerHTML = `
-      <div class="s-item">${icon('spark')}${fmt(s.sparks)}</div>
-      <div class="sep"></div>
-      <div class="s-item note">${icon('note')}${s.notes}</div>
-      <div class="s-item">${icon('trophy')}${s.goals}</div>
-    `;
-    this.summaryEl.classList.remove('is-hidden');
-    void this.summaryEl.offsetWidth;
-    this.summaryEl.classList.add('show');
-    this.summaryTimer = window.setTimeout(() => {
-      this.summaryEl.classList.remove('show');
-      window.setTimeout(() => this.summaryEl.classList.add('is-hidden'), 260);
-    }, 4200);
   }
 
   flash(alpha = 0.18) {

@@ -12,7 +12,8 @@ https://fraguio.com/marblelous/
 
 La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al dominio configurado.
 
-- La primera vez que abres la app el lienzo está vacío y el mundo activo es **Espacio**.
+- Al abrir la app, una breve transición tipográfica muestra **Marblelous** antes de revelar el lienzo.
+- Cada vez que se abre la app el lienzo está vacío y el mundo activo es **Cielo**. Para recuperar la última partida no vacía, ve a **Ajustes > Última partida** y pulsa **Reanudar**.
 - Toca una pieza de la bandeja y después toca el lienzo para colocarla. La pieza se deselecciona al colocarla: para poner otra, vuelve a tocarla en la bandeja.
 - Mantén pulsada una pieza en la bandeja para dejarla **fijada**: cada toque en el lienzo coloca una copia. Vuelve a tocarla en la bandeja (o toca otra pieza) para deseleccionarla.
 - Toca una pieza ya colocada para seleccionarla. Los botones flotantes permiten rotarla, duplicarla, cambiar su longitud (rampas) o borrarla. Cada pieza nueva recibe un color aleatorio de la paleta.
@@ -34,6 +35,7 @@ La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al do
 - El sonido está siempre activado; no hay control de volumen.
 - Los portales pueden separar sus dos agujeros con el botón de tamaño.
 - En ajustes, “Borrar” vacía el escenario actual; puedes deshacerlo. Cada borrado guarda la partida en una cola de las 5 últimas, accesible desde Ajustes > Partidas (1 a 5).
+- En Ajustes > Estructuras hay cinco composiciones densas ya montadas (La Cascada, El Vórtice, La Orquesta, La Factoría y Las Constelaciones). Al elegir una se carga en el lienzo y la partida anterior se guarda en Partidas.
 
 ## Desarrollo
 

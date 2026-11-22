@@ -91,7 +91,6 @@ export interface MarbleType {
   e: number;
   mu: number;
   roll: number;
-  bonus: number;
   color: string;
   glow?: string;
   premium?: boolean;
@@ -182,16 +181,6 @@ export interface PhysEvent {
   speed: number;
 }
 
-export interface Popup {
-  x: number;
-  y: number;
-  text: string;
-  life: number;
-  maxLife: number;
-  color: string;
-  size: number;
-}
-
 export interface Particle {
   x: number;
   y: number;
@@ -245,11 +234,4 @@ export interface ShopItem {
   price: number;
   label: string;
   kind: 'piece' | 'marble';
-}
-
-export interface DropSummary {
-  sparks: number;
-  notes: number;
-  goals: number;
-  bestCombo: number;
 }

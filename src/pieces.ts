@@ -61,7 +61,6 @@ export const MARBLE_TYPES: MarbleType[] = [
     e: 0.45,
     mu: 0.18,
     roll: 0.8,
-    bonus: 1,
     color: '#8FD3EE'
   },
   {
@@ -73,7 +72,6 @@ export const MARBLE_TYPES: MarbleType[] = [
     e: 0.82,
     mu: 0.35,
     roll: 1.25,
-    bonus: 1,
     color: '#E8735A'
   },
   {
@@ -85,7 +83,6 @@ export const MARBLE_TYPES: MarbleType[] = [
     e: 0.25,
     mu: 0.08,
     roll: 0.3,
-    bonus: 1.05,
     color: '#A8B3BD'
   },
   {
@@ -97,7 +94,6 @@ export const MARBLE_TYPES: MarbleType[] = [
     e: 0.4,
     mu: 0.15,
     roll: 0.6,
-    bonus: 1.15,
     color: '#F2A33C',
     glow: '#F2A33C',
     premium: true
@@ -111,7 +107,6 @@ export const MARBLE_TYPES: MarbleType[] = [
     e: 0.5,
     mu: 0.12,
     roll: 0.5,
-    bonus: 1.3,
     color: '#B45AE8',
     glow: '#5AE8D8',
     premium: true
@@ -125,7 +120,6 @@ export const MARBLE_TYPES: MarbleType[] = [
     e: 0.5,
     mu: 0.15,
     roll: 0.6,
-    bonus: 1.25,
     color: '#F4F0FF',
     glow: '#FF8FD3',
     premium: true
@@ -139,7 +133,6 @@ export const MARBLE_TYPES: MarbleType[] = [
     e: 0.5,
     mu: 0.2,
     roll: 0.7,
-    bonus: 1,
     color: '#F2EFE7'
   }
 ];

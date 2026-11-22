@@ -226,7 +226,6 @@ export class Renderer {
     this.drawDust(ctx);
 
     this.drawParticles(ctx, now);
-    this.drawPopups(ctx);
 
     if (g.selectedPieceId) {
       const p = g.selectedPiece;
@@ -1130,31 +1129,6 @@ export class Renderer {
       }
     }
     ctx.globalAlpha = 1;
-  }
-
-  private drawPopups(ctx: CanvasRenderingContext2D) {
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    for (const p of this.game.popups) {
-      const t = clamp(p.life / p.maxLife, 0, 1);
-      const alpha = Math.min(1, t * 2.6);
-      const scale = 1 + (1 - t) * 0.12;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.translate(p.x, p.y);
-      ctx.scale(scale, scale);
-      ctx.font = '800 18px ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif';
-      const tw = ctx.measureText(p.text).width;
-      const total = tw + 16;
-      ctx.translate(-total / 2, 0);
-      this.spark(ctx, 5, 0, 6.5, PALETTE.yellow);
-      ctx.lineWidth = 4.5;
-      ctx.strokeStyle = PALETTE.paper;
-      ctx.strokeText(p.text, 15, 1);
-      ctx.fillStyle = p.color;
-      ctx.fillText(p.text, 15, 1);
-      ctx.restore();
-    }
   }
 
   private spark(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color = PALETTE.yellow) {
