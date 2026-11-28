@@ -14,17 +14,14 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23F2EFE7'/%3E%3Crect x='10' y='30' width='32' height='16' rx='4' fill='%233D7EA6'/%3E%3Ccircle cx='44' cy='26' r='12' fill='%23D95D39'/%3E%3Ccircle cx='40' cy='22' r='3' fill='%23fff' opacity='.8'/%3E%3C/svg%3E" />
   <title>Marblelous</title>
 </head>
-<body class="intro-open">
+<body>
   <div id="app">
     <canvas id="game" role="application" aria-label="Lienzo de construcción de canicas"></canvas>
 
     <div id="hud" aria-live="off">
       <header class="topbar">
         <nav class="top-actions" aria-label="Controles del taller">
-          <button class="ibtn" id="btn-undo" aria-label="Deshacer" title="Deshacer" disabled><svg class="ic"><use href="#i-undo"></use></svg></button>
-          <button class="ibtn" id="btn-redo" aria-label="Rehacer" title="Rehacer" disabled><svg class="ic"><use href="#i-redo"></use></svg></button>
           <button class="ibtn" id="btn-pause" aria-label="Pausar simulación" aria-pressed="false" title="Pausar simulación (P)"><svg class="ic"><use href="#i-pause"></use></svg></button>
-          <button class="ibtn" id="btn-sweep" aria-label="Retirar canicas" title="Retirar canicas" disabled><svg class="ic"><use href="#i-sweep"></use></svg></button>
           <button class="ibtn" id="btn-settings" aria-label="Ajustes"><svg class="ic"><use href="#i-settings"></use></svg></button>
         </nav>
       </header>
@@ -46,11 +43,27 @@
       </div>
 
       <div id="selection-ui" class="selection-ui is-hidden">
+        <div class="selection-actions">
         <button class="sel-btn" id="sel-rotate" aria-label="Rotar pieza"><svg class="ic"><use href="#i-rotate"></use></svg></button>
         <button class="sel-btn is-hidden" id="sel-size" aria-label="Cambiar longitud"><svg class="ic"><use href="#i-resize"></use></svg></button>
         <button class="sel-btn power is-hidden" id="sel-power" aria-label="Cambiar polaridad"><svg class="ic"><use href="#i-magnet"></use></svg></button>
         <button class="sel-btn" id="sel-duplicate" aria-label="Duplicar pieza"><svg class="ic"><use href="#i-copy"></use></svg></button>
+        <button class="sel-btn" id="sel-precision" aria-label="Ajuste fino" aria-expanded="false" title="Ajuste fino (Alt + flechas)"><svg class="ic"><use href="#i-move"></use></svg></button>
+        <button class="sel-btn is-hidden" id="sel-notes" aria-label="Afinar xilófono" title="Afinar xilófono"><svg class="ic"><use href="#i-note"></use></svg></button>
         <button class="sel-btn danger" id="sel-delete" aria-label="Borrar pieza"><svg class="ic"><use href="#i-trash"></use></svg></button>
+        </div>
+        <div id="nudge-controls" class="nudge-controls is-hidden" role="group" aria-label="Mover cuatro píxeles">
+          <button data-nudge="-1,0" aria-label="Mover a la izquierda">←</button>
+          <button data-nudge="0,-1" aria-label="Mover hacia arriba">↑</button>
+          <button data-nudge="0,1" aria-label="Mover hacia abajo">↓</button>
+          <button data-nudge="1,0" aria-label="Mover a la derecha">→</button>
+        </div>
+      </div>
+
+      <button id="first-drop" class="first-drop is-hidden" title="Soltar una canica"><svg class="ic"><use href="#i-marble"></use></svg><span>Soltar una canica</span></button>
+      <div id="workshop-hint" class="workshop-hint is-hidden">
+        <span id="hint-text" aria-live="polite"></span>
+        <button id="dismiss-hint" aria-label="Ocultar la guía"><svg class="ic"><use href="#i-close"></use></svg></button>
       </div>
 
       <div id="tray-wrap" class="tray-wrap">
@@ -71,17 +84,37 @@
       </div>
     </section>
 
+    <section id="album" class="overlay is-hidden" role="dialog" aria-modal="true" aria-label="Álbum de talleres">
+      <div class="sheet narrow album-sheet">
+        <header class="sheet-head"><h2>Álbum de talleres</h2>
+          <button id="new-workshop" class="album-primary">Nuevo taller</button>
+          <button class="ibtn close" aria-label="Cerrar álbum"><svg class="ic"><use href="#i-close"></use></svg></button>
+        </header>
+        <div class="album-body">
+          <form id="rename-workshop" class="rename-workshop is-hidden">
+            <label for="workshop-name">Nombre del taller</label>
+            <input id="workshop-name" maxlength="48" required autocomplete="off" />
+            <button class="album-primary" type="submit">Guardar nombre</button>
+          </form>
+          <h3>Mis talleres</h3><div id="workshop-list" class="workshop-list"></div>
+          <h3>Circuitos para probar</h3><div id="circuit-list" class="circuit-list"></div>
+          <details class="classic-circuits"><summary>Estructuras clásicas</summary><div id="classic-list" class="circuit-list"></div></details>
+        </div>
+      </div>
+    </section>
+
+    <section id="tuning" class="overlay is-hidden" role="dialog" aria-modal="true" aria-label="Afinar xilófono">
+      <div class="sheet narrow tuning-sheet">
+        <header class="sheet-head"><h2>Afinar xilófono</h2>
+          <button class="ibtn close" aria-label="Cerrar afinación"><svg class="ic"><use href="#i-close"></use></svg></button>
+        </header>
+        <div id="tuning-body" class="settings-body"></div>
+      </div>
+    </section>
+
     <div id="toast" class="toast is-hidden"></div>
     <div id="flash" class="flash"></div>
 
-    <div id="intro" class="intro" role="presentation">
-      <div class="intro-inner">
-        <h1 class="intro-word" aria-label="Marblelous">
-          <span>M</span><span>a</span><span>r</span><span>b</span><span>l</span><span>e</span><span>l</span><span>o</span><span>u</span><span>s</span>
-        </h1>
-        <div class="intro-rule"><i class="intro-marble"></i></div>
-      </div>
-    </div>
   </div>
 
   <svg class="svg-defs" aria-hidden="true">
@@ -111,8 +144,6 @@
       <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
       <symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4V8Z" fill="currentColor" stroke="none"/></symbol>
       <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14m6-14v14" stroke-width="2.7"/></symbol>
-      <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 5 4 10l5 5m-5-5h10a5 5 0 0 1 0 10h-2"/></symbol>
-      <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 5 5 5-5 5m5-5H10a5 5 0 0 0 0 10h2"/></symbol>
       <symbol id="i-sweep" viewBox="0 0 24 24"><path d="m11 10 5-6m-7 7 5 4m-5-4-5 6 7 4 3-6m5 1h2m-5 4h3"/></symbol>
       <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 10v4h4l4 4V6l-4 4H4m11-1a4 4 0 0 1 0 6m2-8a7 7 0 0 1 0 10"/></symbol>
       <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
@@ -123,6 +154,9 @@
       <symbol id="i-motion" viewBox="0 0 24 24"><path d="M3 8c3-4 6 4 9 0s6 4 9 0M3 16c3-4 6 4 9 0s6 4 9 0"/></symbol>
       <symbol id="i-haptics" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="3"/><path d="M4 8v8M20 8v8"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.1"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><rect x="5" y="3" width="15" height="18" rx="3"/><path d="M9 3v18m3-12h5m-5 4h3"/></symbol>
+      <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3m12-6 3 3-3 3"/></symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24"><path d="m4 20 4-.8L20 7l-3-3L5 16l-1 4Zm11-14 3 3"/></symbol>
     </defs>
   </svg>
 

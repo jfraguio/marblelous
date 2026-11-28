@@ -221,7 +221,9 @@ export class Renderer {
       if (!m.alive || m.x < minX || m.x > maxX || m.y < minY || m.y > maxY) continue;
       const x = m.awake ? lerp(m.px, m.x, alpha) : m.x;
       const y = m.awake ? lerp(m.py, m.y, alpha) : m.y;
-      const vessel = m.fanRide?.pieceId ?? (m.bubbled || m.ridePiece ? 0 : g.physics.funnelAt(x, y, m.r));
+      const channel = m.channelRide;
+      if (channel && channel.slot > 4 && !channel.releasing) continue;
+      const vessel = channel?.pieceId ?? m.fanRide?.pieceId ?? (m.bubbled || m.ridePiece ? 0 : g.physics.funnelAt(x, y, m.r));
       if (vessel && this.radiusByPiece.has(vessel)) {
         let list = this.inside.get(vessel);
         if (!list) {
@@ -270,6 +272,10 @@ export class Renderer {
     if (g.selectedPieceId && !g.ghost) {
       const p = g.selectedPiece;
       if (p) this.drawSelection(ctx, p, zoom);
+    }
+    if (g.workshop.intro === 'edit' && !g.selectedPieceId && g.mode === 'build') {
+      const channel = visible.find((piece) => piece.defId === 'sTrack');
+      if (channel) this.drawSelection(ctx, channel, zoom);
     }
 
     if (g.dropPreview) {
@@ -1045,6 +1051,18 @@ export class Renderer {
         ctx.fillStyle = `rgba(176,243,216,${glow * 0.42})`;
         ctx.beginPath();
         ctx.ellipse(0, 97, 40, 7, 0, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    if (p.defId === 'meter' || p.defId === 'splitter') {
+      const lit = p.flash !== undefined && now - p.flash < 180;
+      const x = p.defId === 'meter' ? 42 : 29;
+      const dots = p.defId === 'meter' ? 3 : 1;
+      for (let i = 0; i < dots; i++) {
+        ctx.fillStyle = lit ? '#D8FFDD' : i <= p.variant ? '#90D2C0' : '#65838C';
+        ctx.beginPath();
+        ctx.arc(x, -39 + i * 12, 3.2, 0, TAU);
         ctx.fill();
       }
     }

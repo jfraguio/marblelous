@@ -1,6 +1,9 @@
 import type { MarbleType, Piece } from './types';
 import {
   COLORS,
+  CHANNEL_ENTRY,
+  CHANNEL_EXIT,
+  SPLITTER_EXIT_X,
   FAN_HALF,
   FAN_OUTLET,
   FACTORY_LAMP,
@@ -12,6 +15,7 @@ import {
   RAMP_CURVE_START,
   S_TRACK,
   funnelLayout,
+  pieceHitSize,
   pieceLength,
   spiralDepth,
   spiralLocal,
@@ -353,7 +357,11 @@ export function getPieceSprite(p: Piece, scale = spriteScale, front = false): Sp
 export function drawPiece(ctx: CanvasRenderingContext2D, p: Piece, withFront = true) {
   const s = getPieceSprite(p);
   ctx.drawImage(s.canvas, -s.w / 2, -s.h / 2, s.w, s.h);
-  if (withFront && (p.defId === 'funnel' || p.defId === 'fan')) drawPieceFront(ctx, p);
+  if (withFront && hasPieceFront(p)) drawPieceFront(ctx, p);
+}
+
+function hasPieceFront(p: Piece): boolean {
+  return p.defId === 'funnel' || p.defId === 'fan' || p.defId === 'splitter' || p.defId === 'meter';
 }
 
 export function drawPieceFront(ctx: CanvasRenderingContext2D, p: Piece) {
@@ -362,7 +370,27 @@ export function drawPieceFront(ctx: CanvasRenderingContext2D, p: Piece) {
 }
 
 function paintPieceFront(ctx: CanvasRenderingContext2D, p: Piece) {
-  if (p.defId === 'funnel') {
+  if (p.defId === 'splitter' || p.defId === 'meter') {
+    channelPath(ctx, p.defId === 'splitter');
+    ctx.strokeStyle = p.defId === 'splitter' ? 'rgba(177,239,209,0.27)' : 'rgba(184,216,255,0.3)';
+    ctx.lineWidth = 57;
+    ctx.lineCap = 'butt';
+    ctx.stroke();
+    const outlets = p.defId === 'splitter' ? [-SPLITTER_EXIT_X, SPLITTER_EXIT_X] : [0];
+    for (const x of outlets) {
+      ctx.beginPath();
+      ctx.ellipse(x, CHANNEL_EXIT, 31, 8, 0, 0, Math.PI);
+      ctx.strokeStyle = '#D8E9DF';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.ellipse(0, CHANNEL_ENTRY, 32, 9, 0, 0, Math.PI);
+    ctx.strokeStyle = '#D8E9DF';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    if (p.defId === 'meter') chromeCap(ctx, -35, 18, 70, 10, 4);
+  } else if (p.defId === 'funnel') {
     const { left, right } = funnelLayout(p);
     const half = -left[0].x;
     const top = left[0].y;
@@ -426,6 +454,20 @@ function paintPieceFront(ctx: CanvasRenderingContext2D, p: Piece) {
     ctx.stroke();
     fillPath(ctx, (c2) => rr(c2, -FAN_HALF, 101, FAN_HALF * 2, 14, 6), bodyGrad(ctx, '#469CA2', 101, 115), 2);
     gloss(ctx, -42, 103, 84, 2, 1, 0.45);
+  }
+}
+
+function channelPath(ctx: CanvasRenderingContext2D, split: boolean) {
+  ctx.beginPath();
+  ctx.moveTo(0, CHANNEL_ENTRY);
+  if (!split) {
+    ctx.lineTo(0, CHANNEL_EXIT);
+    return;
+  }
+  ctx.lineTo(0, -26);
+  for (const side of [-1, 1]) {
+    ctx.moveTo(0, -26);
+    ctx.bezierCurveTo(0, 3, side * 48, 23, side * SPLITTER_EXIT_X, CHANNEL_EXIT);
   }
 }
 
@@ -1273,6 +1315,22 @@ function buildPieceSprite(p: Piece, ww: number, hh: number, scale = spriteScale)
       }
       ring(-half, PALETTE.purple);
       ring(half, PALETTE.teal);
+    } else if (p.defId === 'splitter' || p.defId === 'meter') {
+      const split = p.defId === 'splitter';
+      channelPath(ctx, split);
+      ink(ctx, 71);
+      ctx.lineCap = 'butt';
+      ctx.stroke();
+      ctx.strokeStyle = bodyGrad(ctx, split ? PALETTE.teal : PALETTE.purple, CHANNEL_ENTRY, CHANNEL_EXIT);
+      ctx.lineWidth = 66;
+      ctx.stroke();
+      ctx.strokeStyle = split ? '#416976' : '#405474';
+      ctx.lineWidth = 54;
+      ctx.stroke();
+      fillPath(ctx, (c2) => c2.ellipse(0, CHANNEL_ENTRY, 33, 10, 0, 0, TAU), '#30495B', 2.4);
+      for (const x of split ? [-SPLITTER_EXIT_X, SPLITTER_EXIT_X] : [0]) {
+        fillPath(ctx, (c2) => c2.ellipse(x, CHANNEL_EXIT, 31, 8, 0, 0, TAU), '#30495B', 2.4);
+      }
     } else if (p.defId === 'fan') {
       const air = ctx.createLinearGradient(0, FAN_OUTLET, 0, 102);
       air.addColorStop(0, 'rgba(184,230,222,0.38)');
@@ -1770,7 +1828,45 @@ export function drawPreview(canvas: HTMLCanvasElement, itemId: string, kind: 'pi
   const x = cw / 2 - dw / 2;
   const y = ch / 2 - dh / 2 - 1;
   ctx.drawImage(s.canvas, x, y, dw, dh);
-  if (p.defId === 'funnel' || p.defId === 'fan') ctx.drawImage(getPieceSprite(p, 1, true).canvas, x, y, dw, dh);
+  if (hasPieceFront(p)) ctx.drawImage(getPieceSprite(p, 1, true).canvas, x, y, dw, dh);
+}
+
+/** Pictograma del circuito: barato incluso si hay muchos talleres guardados. */
+export function drawWorkshopPreview(canvas: HTMLCanvasElement, pieces: Piece[], paper: string) {
+  canvas.width = 180;
+  canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.fillStyle = paper;
+  ctx.fillRect(0, 0, 180, 96);
+  ctx.fillStyle = 'rgba(29,55,64,0.13)';
+  for (let x = 10; x < 180; x += 12) {
+    for (let y = 10; y < 96; y += 12) ctx.fillRect(x, y, 1, 1);
+  }
+  if (!pieces.length) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of pieces) {
+    const { w, h } = pieceHitSize(p);
+    const r = Math.hypot(w, h) / 2;
+    minX = Math.min(minX, p.x - r); maxX = Math.max(maxX, p.x + r);
+    minY = Math.min(minY, p.y - r); maxY = Math.max(maxY, p.y + r);
+  }
+  const zoom = Math.min(155 / (maxX - minX), 74 / (maxY - minY), 0.57);
+  ctx.translate(90, 48);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-(minX + maxX) / 2, -(minY + maxY) / 2);
+  const step = Math.max(1, Math.ceil(pieces.length / 90));
+  for (let i = 0; i < pieces.length; i += step) {
+    const p = pieces[i];
+    const { w, h } = pieceHitSize(p);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rot);
+    ctx.fillStyle = colorFor(p);
+    rr(ctx, -w * 0.44, -h * 0.3, w * 0.88, Math.max(h * 0.6, 2 / zoom), 8);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawGlyph(ctx: CanvasRenderingContext2D, name: string, cx: number, cy: number, r: number) {

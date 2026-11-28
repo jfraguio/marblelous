@@ -147,6 +147,7 @@ function dir(p: Piece, lx: number, ly: number): Vec2 {
 
 interface ColOpts {
   note?: number;
+  pitch?: number;
   chime?: boolean;
   conveyor?: number;
   cannon?: boolean;
@@ -183,6 +184,7 @@ function addCap(
     mat: m.mat,
     pieceId: p.id,
     note: opts.note ?? -1,
+    pitch: opts.pitch,
     conveyor: opts.conveyor ?? 0,
     cannon: opts.cannon ? 1 : 0,
     bumper: opts.bumper ? 1 : 0,
@@ -277,6 +279,27 @@ export const FAN_HALF = 52;
 export const FAN_INTAKE_TOP = 54;
 export const FAN_INTAKE_BOTTOM = 116;
 export const FAN_OUTLET = -108;
+export const CHANNEL_ENTRY = -79;
+export const CHANNEL_EXIT = 77;
+export const SPLITTER_EXIT_X = 82;
+export const METER_INTERVALS = [0.45, 0.8, 1.25];
+export const XYLO_NOTES = [0, 1, 2, 3, 4];
+
+export function xyloNotes(notes?: number[]): number[] {
+  return XYLO_NOTES.map((fallback, i) => {
+    const note = notes?.[i];
+    return Number.isInteger(note) && note! >= 0 && note! < XYLO_NOTES.length ? note! : fallback;
+  });
+}
+
+function buildChannel(p: Piece, kind: 'splitter' | 'meter') {
+  return {
+    colliders: [],
+    triggers: [{ kind, x: p.x, y: p.y, w: 86, h: 222, rot: p.rot, r: 0,
+      power: kind === 'meter' ? METER_INTERVALS[p.variant] ?? METER_INTERVALS[1] : 0,
+      pieceId: p.id, disabledUntil: 0, dx: 0, dy: 0, pairId: 0 }]
+  };
+}
 
 export function xyloLayout(count: number): { widths: number[]; xs: number[]; total: number } {
   const widths: number[] = [];
@@ -790,6 +813,14 @@ const defs: PieceDef[] = [
     }
   },
   {
+    id: 'splitter', label: 'Bifurcación', w: 240, h: 186, tintable: false, defaultColor: 3,
+    build: (p) => buildChannel(p, 'splitter')
+  },
+  {
+    id: 'meter', label: 'Dosificador', w: 124, h: 186, tintable: false, defaultColor: 4,
+    build: (p) => buildChannel(p, 'meter')
+  },
+  {
     id: 'xylo5',
     label: 'Xilófono de 5 notas',
     w: 440,
@@ -799,10 +830,12 @@ const defs: PieceDef[] = [
     build: (p) => {
       const c: Collider[] = [];
       const layout = xyloLayout(5);
+      const notes = xyloNotes(p.notes);
       for (let i = 0; i < layout.widths.length; i++) {
         const w = layout.widths[i];
         addCap(c, p, layout.xs[i] - w / 2 + 1, -4, layout.xs[i] + w / 2 - 1, -4, 7, 'chime', {
           note: i,
+          pitch: notes[i],
           chime: true
         });
       }
@@ -836,7 +869,7 @@ export function makePiece(id: number, defId: string, x: number, y: number, rot =
     rot,
     len: len ?? defaultLen(defId),
     color: def.defaultColor,
-    variant: 0,
+    variant: defId === 'meter' ? 1 : 0,
     powered: defId === 'marbleFactory' ? true : undefined,
     bornAt: performance.now()
   };
@@ -902,6 +935,13 @@ export function piecePorts(p: Piece): PiecePort[] {
     add(0, 106, 0, 1);
     add(-52, 106, -1, 0);
     add(52, 106, 1, 0);
+  } else if (p.defId === 'splitter' || p.defId === 'meter') {
+    add(0, CHANNEL_ENTRY, 0, -1);
+    if (p.defId === 'meter') add(0, CHANNEL_EXIT, 0, 1);
+    else {
+      add(-SPLITTER_EXIT_X, CHANNEL_EXIT, -0.5, 0.866);
+      add(SPLITTER_EXIT_X, CHANNEL_EXIT, 0.5, 0.866);
+    }
   } else if (p.defId === 'spiral') {
     const a = spiralLocal(0);
     const b = spiralLocal(1);
@@ -951,7 +991,7 @@ export function pieceCorners(p: Piece): Vec2[] {
 }
 
 export const PIECE_TRAY = [
-  'ramp', 'rampCurve', 'sTrack', 'balance', 'funnel', 'conveyor', 'spiral', 'bubble',
+  'ramp', 'rampCurve', 'sTrack', 'splitter', 'meter', 'balance', 'funnel', 'conveyor', 'spiral', 'bubble',
   'bubbleLift', 'marbleFactory', 'portal', 'fan', 'electromagnet', 'hourglass', 'xylo5',
   'booster', 'cannon', 'bumper', 'star', 'goal'
 ].map(getPieceDef);

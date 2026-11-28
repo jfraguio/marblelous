@@ -11,6 +11,7 @@ export interface StructurePiece {
   len?: number;
   color?: number;
   variant?: number;
+  notes?: number[];
   polarity?: number;
   powered?: boolean;
 }
@@ -342,3 +343,32 @@ function windChimes(): StructureDef {
 }
 
 export const STRUCTURES: StructureDef[] = [cascade(), vortex(), orchestra(), factory(), constellation(), windChimes()];
+
+export const FIRST_DROP = { x: -240, y: -313 };
+export const FIRST_CIRCUIT = structure('primera-brisa', 'Mi primera brisa', 'Suelta una canica y cambia el recorrido.', windChimes().pieces.slice(1));
+
+export const SHORT_CIRCUITS = [
+  FIRST_CIRCUIT,
+  structure('dos-voces', 'Dos voces', '¿Qué pasa si cada lado toca notas distintas?', [
+    { defId: 'marbleFactory', x: 0, y: -324 }, { defId: 'splitter', x: 0, y: -80 },
+    { ...xylo(-247, 110, -8 * DEG), notes: [0, 0, 2, 1, 0] },
+    { ...xylo(247, 110, 8 * DEG), notes: [4, 3, 4, 2, 4] }
+  ]),
+  structure('un-pulso', 'Un pulso', 'Prueba los tres intervalos del dosificador.', [
+    { defId: 'marbleFactory', x: 0, y: -375 },
+    funnel(0, -180, 260, 3), { defId: 'meter', x: 0, y: 30, variant: 2 }, xylo(0, 245, 9 * DEG)
+  ]),
+  structure('la-helice', 'La hélice', 'Juega con la caída antes de entrar en la espiral.', [
+    { defId: 'marbleFactory', x: 0, y: -315 }, { defId: 'spiral', x: 0, y: -45 }, xylo(0, 224, 10 * DEG)
+  ]),
+  structure('el-salto', 'El salto', 'Cambia la inclinación para recibir la canica en otra lámina.', [
+    { defId: 'marbleFactory', x: -190, y: -315 },
+    ramp(-100, -130, 15 * DEG, 272, 2), bumper(92, -15), xylo(160, 157, 8 * DEG)
+  ]),
+  structure('otra-vuelta', 'Otra vuelta', '¿Puedes devolver la canica a la entrada con el portal?', [
+    { defId: 'marbleFactory', x: -180, y: -320 },
+    { defId: 'portal', x: 0, y: -125, rot: -Math.PI / 2, len: 310 },
+    ramp(-80, -110, 13 * DEG, 240, 1), { defId: 'sTrack', x: 124, y: -38, color: 3 },
+    xylo(62, 120, -9 * DEG)
+  ])
+];

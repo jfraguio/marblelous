@@ -21,6 +21,7 @@ export interface Piece {
   len: number;
   color: number;
   variant: number;
+  notes?: number[];
   /** runtime animation state */
   flash?: number;
   flashNote?: number;
@@ -48,6 +49,7 @@ export interface Collider {
   mat: MaterialId;
   pieceId: number;
   note: number;
+  pitch?: number;
   conveyor: number;
   cannon: number;
   bumper: number;
@@ -61,7 +63,7 @@ export interface Collider {
   uy: number;
 }
 
-export type TriggerKind = 'goal' | 'star' | 'boost' | 'portal' | 'fan' | 'funnel' | 'spiral' | 'bubbleLift' | 'magnet' | 'hourglass' | 'cannon';
+export type TriggerKind = 'goal' | 'star' | 'boost' | 'portal' | 'fan' | 'funnel' | 'spiral' | 'bubbleLift' | 'magnet' | 'hourglass' | 'cannon' | 'splitter' | 'meter';
 
 export interface Trigger {
   kind: TriggerKind;
@@ -131,6 +133,7 @@ export interface Marble {
   rideScale: number;
   rideDepth: number;
   fanRide?: { pieceId: number; t: number; x: number; y: number; exitX: number };
+  channelRide?: { pieceId: number; t: number; x: number; y: number; side: number; reversed: boolean; slot: number; releasing: boolean };
   lastFanPiece: number;
   fanReadyAt: number;
   bubbled: boolean;
@@ -167,6 +170,7 @@ export interface PhysEvent {
     | 'bubble'
     | 'pop'
     | 'fan'
+    | 'channel'
     | 'contact'
     | 'marble'
     | 'rainbow'
@@ -175,6 +179,7 @@ export interface PhysEvent {
   y: number;
   pieceId: number;
   note: number;
+  pitch?: number;
   impact: number;
   marbleId: number;
   speed: number;
@@ -202,16 +207,20 @@ export interface Settings {
   sound: 0 | 1 | 2;
 }
 
-export interface WorldData {
+export interface Workshop {
+  id: string;
+  name: string;
+  updatedAt: number;
+  theme: number;
   pieces: Piece[];
   camera: Camera;
+  intro?: 'drop' | 'edit' | 'again';
 }
 
-export interface SaveData {
-  v: number;
-  updatedAt: number;
-  activeWorld: number;
-  worlds: WorldData[];
+export interface AlbumSave {
+  v: 2;
+  activeId: string;
+  workshops: Workshop[];
   settings: Settings;
   selectedMarble: string;
 }

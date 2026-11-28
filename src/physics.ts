@@ -1,6 +1,7 @@
 import type { Collider, Marble, PhysEvent, Piece, Trigger } from './types';
 import {
   FAN_HALF, FAN_INTAKE_BOTTOM, FAN_INTAKE_TOP, FAN_OUTLET, FUNNEL_LEFT,
+  CHANNEL_ENTRY, CHANNEL_EXIT, SPLITTER_EXIT_X,
   SPIRAL_DURATION, SPIRAL_ENTRY, buildPiece, funnelHalfWidthAt, pieceHitSize, spiralDepth, spiralLocal
 } from './pieces';
 import { clamp, lerp, TAU } from './util';
@@ -21,6 +22,15 @@ interface SpiralInfo {
   x: number;
   y: number;
   rot: number;
+}
+
+interface Channel {
+  trigger: Trigger;
+  cos: number;
+  sin: number;
+  turn: number;
+  queue: Marble[];
+  readyAt: number;
 }
 
 function cellKey(cx: number, cy: number) {
@@ -47,6 +57,9 @@ export class PhysicsWorld {
   private grid = new Map<number, number[]>();
   private triggerGrid = new Map<number, number[]>();
   private fans = new Map<number, Trigger>();
+  private channels = new Map<number, Channel>();
+  private busyMeters = new Set<Channel>();
+  private clock = 0;
   private hasFunnels = false;
   private hasFields = false;
   private hasInteractions = false;
@@ -58,6 +71,9 @@ export class PhysicsWorld {
   private stamp = 0;
 
   rebuild(pieces: Piece[]) {
+    const previousChannels = this.channels;
+    this.channels = new Map();
+    this.busyMeters.clear();
     const disabled = new Map<string, number>();
     for (const t of this.triggers) {
       const key = `${t.kind}:${t.pieceId}`;
@@ -80,6 +96,15 @@ export class PhysicsWorld {
         if (prev > t.disabledUntil) t.disabledUntil = prev;
         this.triggers.push(t);
         if (t.kind === 'fan') this.fans.set(t.pieceId, t);
+        else if (t.kind === 'meter' || t.kind === 'splitter') {
+          const previous = previousChannels.get(t.pieceId);
+          const channel = previous?.trigger.kind === t.kind ? previous : { trigger: t, cos: 1, sin: 0, turn: -1, queue: [], readyAt: 0 };
+          channel.trigger = t;
+          channel.cos = Math.cos(t.rot);
+          channel.sin = Math.sin(t.rot);
+          this.channels.set(t.pieceId, channel);
+          if (channel.queue.length || channel.readyAt > this.clock) this.busyMeters.add(channel);
+        }
         else if (t.kind === 'funnel') this.hasFunnels = true;
         else if (t.kind === 'boost' || t.kind === 'magnet') this.hasFields = true;
         else this.hasInteractions = true;
@@ -162,6 +187,14 @@ export class PhysicsWorld {
     for (const trigger of this.triggers) trigger.disabledUntil = 0;
   }
 
+  clearMeters() {
+    for (const meter of this.busyMeters) {
+      meter.queue.length = 0;
+      meter.readyAt = this.clock;
+    }
+    this.busyMeters.clear();
+  }
+
   /** Triggers cuya caja puede contener a la canica (consulta de una celda). */
   private nearbyTriggers(x: number, y: number): readonly number[] {
     return this.triggerGrid.get(cellKey(Math.floor(x / TRIGGER_CELL), Math.floor(y / TRIGGER_CELL))) ?? NO_TRIGGERS;
@@ -186,6 +219,17 @@ export class PhysicsWorld {
   }
 
   update(marbles: Marble[], dt: number, now: number) {
+    this.clock += dt;
+    for (const meter of this.busyMeters) {
+      let slot = 0;
+      for (const m of meter.queue) {
+        if (!m.alive || m.channelRide?.pieceId !== meter.trigger.pieceId || m.channelRide.releasing) continue;
+        m.channelRide.slot = slot;
+        meter.queue[slot++] = m;
+      }
+      meter.queue.length = slot;
+      if (!slot && this.clock >= meter.readyAt) this.busyMeters.delete(meter);
+    }
     for (const m of marbles) {
       if (m.alive) this.stepMarble(m, dt, now);
     }
@@ -199,6 +243,10 @@ export class PhysicsWorld {
     }
     if (m.fanRide) {
       this.stepFan(m, m.fanRide, dt, now);
+      return;
+    }
+    if (m.channelRide) {
+      this.stepChannel(m, m.channelRide, dt);
       return;
     }
     if (m.ridePiece) {
@@ -224,7 +272,7 @@ export class PhysicsWorld {
       }
       m.x += m.vx * h;
       m.y += m.vy * h;
-      if (this.fans.size && this.passFan(m, h, now)) return;
+      if ((this.fans.size || this.channels.size) && this.passMachine(m, h, now)) return;
       this.resolveStatic(m, h, now);
     }
 
@@ -252,9 +300,10 @@ export class PhysicsWorld {
     }
   }
 
-  private passFan(m: Marble, dt: number, now: number): boolean {
+  private passMachine(m: Marble, dt: number, now: number): boolean {
     for (const index of this.nearbyTriggers(m.x, m.y)) {
       const t = this.triggers[index];
+      if ((t.kind === 'splitter' || t.kind === 'meter') && this.enterChannel(m, this.channels.get(t.pieceId)!)) return true;
       if (t.kind !== 'fan' || (t.pieceId === m.lastFanPiece && now < m.fanReadyAt)) continue;
       const c = -t.dy;
       const s = t.dx;
@@ -281,6 +330,82 @@ export class PhysicsWorld {
       return true;
     }
     return false;
+  }
+
+  private enterChannel(m: Marble, channel: Channel): boolean {
+    const { trigger: t, cos, sin } = channel;
+    const dx = m.x - t.x;
+    const dy = m.y - t.y;
+    const x = dx * cos + dy * sin;
+    const y = dy * cos - dx * sin;
+    const metered = t.kind === 'meter';
+    const reversed = !metered && cos < -0.001;
+    const side = metered ? 0 : reversed ? (x < 0 ? -1 : 1) : channel.turn;
+    const direction = reversed ? -1 : 1;
+    const inletX = reversed ? side * SPLITTER_EXIT_X : 0;
+    const inletY = reversed ? CHANNEL_EXIT : CHANNEL_ENTRY;
+    const depth = (y - inletY) * direction;
+    const approach = (m.vy * cos - m.vx * sin) * direction;
+    if (Math.abs(x - inletX) > 37 || depth < -12 || depth > 30 || approach < -30) return false;
+    m.channelRide = { pieceId: t.pieceId, t: 0, x, y, side, reversed, slot: channel.queue.length, releasing: false };
+    if (metered) {
+      channel.queue.push(m);
+      this.busyMeters.add(channel);
+    } else if (!reversed) {
+      channel.turn *= -1;
+    }
+    m.vx = m.vy = m.contact = m.airTime = m.sleepTimer = 0;
+    m.trail.length = 0;
+    return true;
+  }
+
+  private stepChannel(m: Marble, ride: NonNullable<Marble['channelRide']>, dt: number) {
+    const channel = this.channels.get(ride.pieceId);
+    if (!channel) {
+      m.channelRide = undefined;
+      return;
+    }
+    const { trigger: t, cos, sin } = channel;
+    let x: number;
+    let y: number;
+    let exited = false;
+    if (t.kind === 'splitter') {
+      ride.t = Math.min(1, ride.t + dt / 0.39);
+      const progress = ride.reversed ? 1 - ride.t : ride.t;
+      const bend = clamp((progress - 0.29) / 0.71, 0, 1);
+      const branchX = ride.side * SPLITTER_EXIT_X;
+      const inletX = ride.reversed ? branchX : 0;
+      x = lerp(ride.x - inletX, 0, Math.min(1, ride.t / 0.29)) + branchX * bend ** 1.4;
+      y = lerp(ride.y, ride.reversed ? CHANNEL_ENTRY : CHANNEL_EXIT, ride.t);
+      exited = ride.t === 1;
+    } else if (ride.releasing) {
+      ride.t = Math.min(1, ride.t + dt / 0.22);
+      x = 0;
+      y = lerp(1, CHANNEL_EXIT, ride.t);
+      exited = ride.t === 1;
+    } else {
+      ride.t = Math.min(1, ride.t + dt / 0.24);
+      x = lerp(ride.x, 0, ride.t);
+      y = lerp(ride.y, 1 - Math.min(ride.slot, 4) * 17, ride.t);
+      if (ride.t === 1 && ride.slot === 0 && this.clock >= channel.readyAt) {
+        ride.t = 0;
+        ride.releasing = true;
+        channel.readyAt = this.clock + t.power;
+        this.events.push({ type: 'channel', x: m.x, y: m.y, pieceId: t.pieceId, note: -1, impact: 0, marbleId: m.id, speed: 0 });
+      }
+    }
+    m.px = m.x;
+    m.py = m.y;
+    m.x = t.x + x * cos - y * sin;
+    m.y = t.y + x * sin + y * cos;
+    if (exited) {
+      m.channelRide = undefined;
+      const sideSpeed = ride.reversed ? 0 : ride.side * 210;
+      const alongSpeed = ride.reversed ? -295 : 295;
+      m.vx = sideSpeed * cos - alongSpeed * sin;
+      m.vy = sideSpeed * sin + alongSpeed * cos;
+      if (t.kind === 'splitter') this.events.push({ type: 'channel', x: m.x, y: m.y, pieceId: t.pieceId, note: -1, impact: 0, marbleId: m.id, speed: 0 });
+    }
   }
 
   private stepFan(m: Marble, ride: NonNullable<Marble['fanRide']>, dt: number, now: number) {
@@ -795,6 +920,7 @@ export class PhysicsWorld {
         y: m.y,
         pieceId: c.pieceId,
         note: c.note,
+        pitch: c.pitch,
         impact,
         marbleId: m.id,
         speed: Math.hypot(m.vx, m.vy)
@@ -821,7 +947,7 @@ export class PhysicsWorld {
   }
 
   private collideMarblePair(a: Marble, b: Marble, now: number): boolean {
-    if (!a.alive || !b.alive || a.bubbled || b.bubbled || a.fanRide || b.fanRide || a.ridePiece || b.ridePiece) return false;
+    if (!a.alive || !b.alive) return false;
     if (!a.awake && !b.awake) return true;
     let dx = b.x - a.x;
     let dy = b.y - a.y;
@@ -926,7 +1052,7 @@ export class PhysicsWorld {
     this.marbleCells.length = 0;
     for (let i = 0; i < marbles.length; i++) {
       const m = marbles[i];
-      if (!m.alive || m.bubbled || m.fanRide || m.ridePiece) continue;
+      if (!m.alive || m.bubbled || m.fanRide || m.ridePiece || m.channelRide) continue;
       const key = cellKey(Math.floor(m.x / MARBLE_CELL), Math.floor(m.y / MARBLE_CELL));
       let arr = this.marbleGrid.get(key);
       if (!arr) {
@@ -943,10 +1069,10 @@ export class PhysicsWorld {
     if (n < 32) {
       for (let i = 0; i < n; i++) {
         const a = marbles[i];
-        if (!a.alive || a.bubbled || a.fanRide || a.ridePiece) continue;
+        if (!a.alive || a.bubbled || a.fanRide || a.ridePiece || a.channelRide) continue;
         for (let j = i + 1; j < n; j++) {
           const b = marbles[j];
-          if (!b.alive || b.bubbled || b.fanRide || b.ridePiece) continue;
+          if (!b.alive || b.bubbled || b.fanRide || b.ridePiece || b.channelRide) continue;
           if (!this.collideMarblePair(a, b, now)) break;
         }
       }
@@ -955,7 +1081,7 @@ export class PhysicsWorld {
     this.rebuildMarbleGrid(marbles);
     for (let i = 0; i < n; i++) {
       const a = marbles[i];
-      if (!a.alive || a.bubbled || a.fanRide || a.ridePiece) continue;
+      if (!a.alive || a.bubbled || a.fanRide || a.ridePiece || a.channelRide) continue;
       const cx = Math.floor(a.x / MARBLE_CELL);
       const cy = Math.floor(a.y / MARBLE_CELL);
       let stop = false;

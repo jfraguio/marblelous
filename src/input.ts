@@ -5,6 +5,7 @@ import { CAMERA_TILT, clamp, isEditableTarget } from './util';
 type Screen = { x: number; y: number };
 
 type Single =
+  | { type: 'test'; pointerId: number }
   | {
       type: 'drop';
       pointerId: number;
@@ -68,7 +69,10 @@ export class Input {
     c.addEventListener('pointercancel', this.onCancel, { passive: false });
     c.addEventListener('lostpointercapture', this.onCancel);
     c.addEventListener('pointerleave', () => {
-      if (!this.single) this.game.clearPreview();
+      if (!this.single) {
+        this.game.clearPreview();
+        this.game.dropPreview = null;
+      }
     });
     c.addEventListener(
       'wheel',
@@ -106,6 +110,11 @@ export class Input {
     if (this.pointers.size > 2) return;
 
     const world = this.game.screenToWorld(e.clientX, e.clientY);
+    if (this.game.testDropArmed) {
+      this.single = { type: 'test', pointerId: e.pointerId };
+      this.game.dropPreview = world;
+      return;
+    }
     if (this.game.mode === 'build' && this.game.armedDefId) {
       this.single = {
         type: 'place',
@@ -178,13 +187,19 @@ export class Input {
     }
     const s = this.single;
     if (!s) {
-      if (e.pointerType === 'mouse' && !this.game.overlayOpen && this.game.armedDefId) {
+      if (e.pointerType === 'mouse' && !this.game.overlayOpen && this.game.testDropArmed) {
+        this.game.dropPreview = this.game.screenToWorld(e.clientX, e.clientY);
+      } else if (e.pointerType === 'mouse' && !this.game.overlayOpen && this.game.armedDefId) {
         const w = this.game.screenToWorld(e.clientX, e.clientY);
         this.game.previewPiece(this.game.armedDefId, w.x, w.y);
       }
       return;
     }
     if (s.pointerId !== e.pointerId) return;
+    if (s.type === 'test') {
+      this.game.dropPreview = this.game.screenToWorld(e.clientX, e.clientY);
+      return;
+    }
     if (s.type === 'place') {
       const w = this.game.screenToWorld(e.clientX, e.clientY);
       this.game.previewPiece(s.defId, w.x, w.y);
@@ -224,7 +239,7 @@ export class Input {
       if (s.moved) {
         const p = this.game.pieces.find((x) => x.id === s.pieceId);
         const zoom = this.game.camera.zoom;
-        if (p) this.game.movePieceTo(p, s.fromX + dx / zoom, s.fromY + dy / (zoom * CAMERA_TILT));
+        if (p) this.game.movePieceTo(p, s.fromX + dx / zoom, s.fromY + dy / (zoom * CAMERA_TILT), e.altKey);
       }
     } else if (s.type === 'pan') {
       this.game.camera.x = s.camX - dx / this.game.camera.zoom;
@@ -243,7 +258,14 @@ export class Input {
     }
     const s = this.single;
     if (s && s.pointerId === e.pointerId) {
-      if (s.type === 'drop') {
+      if (s.type === 'test') {
+        if (this.game.testDropArmed && !this.game.isPaused && document.elementFromPoint(e.clientX, e.clientY) === this.canvas) {
+          const w = this.game.screenToWorld(e.clientX, e.clientY);
+          this.game.spawnMarble(w.x, w.y);
+          this.game.toggleTestDrop();
+        }
+        this.game.dropPreview = null;
+      } else if (s.type === 'drop') {
         clearTimeout(s.rainTimer);
         clearInterval(s.rainInterval);
         if (!s.moved && !s.raining && !this.game.isPaused && document.elementFromPoint(e.clientX, e.clientY) === this.canvas) {
@@ -251,12 +273,11 @@ export class Input {
         }
         this.game.dropPreview = null;
       } else if (s.type === 'piece') {
-        const p = this.game.pieces.find((x) => x.id === s.pieceId);
-        if (p && s.moved) {
+        if (s.moved) {
           if (this.game.overlayOpen || document.elementFromPoint(e.clientX, e.clientY) !== this.canvas) {
-            this.game.cancelMove(p, s.fromX, s.fromY);
+            this.game.cancelMove();
           } else {
-            this.game.endMove(p, s.fromX, s.fromY);
+            this.game.endMove();
           }
         }
       } else if (s.type === 'place') {
@@ -284,9 +305,7 @@ export class Input {
       clearTimeout(this.single.rainTimer);
       clearInterval(this.single.rainInterval);
     } else if (this.single?.type === 'piece') {
-      const s = this.single;
-      const p = this.game.pieces.find((x) => x.id === s.pieceId);
-      if (p && s.moved) this.game.cancelMove(p, s.fromX, s.fromY);
+      this.game.cancelMove();
     }
     this.game.clearPreview();
     this.single = null;
@@ -321,15 +340,16 @@ export class Input {
 
   private bindKeys() {
     window.addEventListener('keydown', (e) => {
-      if (isEditableTarget(e.target)) return;
       if (this.game.overlayOpen) {
         if (e.key === 'Escape') this.ui.closeOverlays();
         return;
       }
+      if (isEditableTarget(e.target)) return;
       const k = e.key;
       if (k === 'Escape') {
         this.cancelSingle();
-        if (this.game.armedDefId) this.game.disarmPiece();
+        if (this.game.testDropArmed) this.game.toggleTestDrop();
+        else if (this.game.armedDefId) this.game.disarmPiece();
         else this.game.deselect();
         return;
       }
@@ -347,6 +367,11 @@ export class Input {
         return;
       }
       const step = 70 / this.game.camera.zoom;
+      if (e.altKey && this.game.selectedPieceId && k.startsWith('Arrow')) {
+        e.preventDefault();
+        this.game.nudgeSelection(Number(k === 'ArrowRight') - Number(k === 'ArrowLeft'), Number(k === 'ArrowDown') - Number(k === 'ArrowUp'));
+        return;
+      }
       if (k === 'ArrowLeft') this.game.camera.x -= step;
       else if (k === 'ArrowRight') this.game.camera.x += step;
       else if (k === 'ArrowUp') this.game.camera.y -= step;
@@ -354,6 +379,7 @@ export class Input {
       else if (k === '+' || k === '=') this.game.zoomAtScreen(this.game.viewW / 2, this.game.viewH / 2, this.game.camera.zoom * 1.18);
       else if (k === '-') this.game.zoomAtScreen(this.game.viewW / 2, this.game.viewH / 2, this.game.camera.zoom / 1.18);
       else if (k.toLowerCase() === 'p' && !e.repeat && !e.metaKey && !e.ctrlKey) this.game.toggleSimulation();
+      else if (k.toLowerCase() === 't' && !e.repeat && !e.metaKey && !e.ctrlKey) this.game.toggleTestDrop();
       else if (k === ' ') {
         if ((e.target as HTMLElement | null)?.tagName === 'BUTTON') return;
         e.preventDefault();

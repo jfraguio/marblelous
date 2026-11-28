@@ -6,9 +6,10 @@ const vite = await createServer({ configFile: false, server: { middlewareMode: t
 after(() => vite.close());
 
 const { PhysicsWorld, createMarble } = await vite.ssrLoadModule('/src/physics.ts');
-const { makePiece, MARBLE_BY_ID } = await vite.ssrLoadModule('/src/pieces.ts');
+const { makePiece, MARBLE_BY_ID, METER_INTERVALS, CHANNEL_ENTRY, CHANNEL_EXIT, SPLITTER_EXIT_X, xyloLayout } = await vite.ssrLoadModule('/src/pieces.ts');
 const { findSnap } = await vite.ssrLoadModule('/src/snap.ts');
 const { STRUCTURES } = await vite.ssrLoadModule('/src/structures.ts');
+const { ALBUM_KEY, findAlbum } = await vite.ssrLoadModule('/src/album.ts');
 const dt = 1 / 120;
 
 function rotate(x, y, angle) {
@@ -115,4 +116,112 @@ test('La Brisa lleva la canica de la fábrica al xilófono pasando por el ventil
   assert.ok(seenFunnel, 'la canica no entró al embudo');
   assert.ok(seenFan, 'la canica no llegó al ventilador');
   assert.ok(played, 'la canica no tocó el xilófono');
+});
+
+test('la bifurcación alterna salidas incluso girada y al reconstruir la rejilla', () => {
+  const world = new PhysicsWorld();
+  const heading = Math.PI / 6;
+  const splitter = makePiece(1, 'splitter', 0, 0, heading);
+  const inlet = rotate(0, CHANNEL_ENTRY - 2, heading);
+  const velocity = rotate(0, 1200, heading);
+  const outlets = [];
+  for (let id = 1; id <= 4; id++) {
+    world.rebuild([splitter]);
+    const marble = createMarble(id, MARBLE_BY_ID.get('crystal'), inlet.x, inlet.y, 0, 0);
+    marble.vx = velocity.x;
+    marble.vy = velocity.y;
+    assert.ok(simulate(world, marble, (events) => events.some((event) => event.type === 'channel')));
+    const exit = rotate(marble.x, marble.y, -heading);
+    assert.equal(Math.round(exit.y), CHANNEL_EXIT);
+    outlets.push(Math.round(exit.x));
+  }
+  assert.deepEqual(outlets, [-SPLITTER_EXIT_X, SPLITTER_EXIT_X, -SPLITTER_EXIT_X, SPLITTER_EXIT_X]);
+});
+
+test('la bifurcación invertida reúne las dos patas en la salida central', () => {
+  for (const heading of [Math.PI, Math.PI + Math.PI / 6]) {
+    const world = new PhysicsWorld();
+    const piece = makePiece(1, 'splitter', 140, 50, heading);
+    world.rebuild([piece]);
+    const velocity = rotate(0, -1200, heading);
+    const marbles = [-1, 1].map((side, i) => {
+      const inlet = rotate(side * SPLITTER_EXIT_X, CHANNEL_EXIT + 8, heading);
+      const marble = createMarble(i + 1, MARBLE_BY_ID.get('crystal'), piece.x + inlet.x, piece.y + inlet.y, 0, 0);
+      marble.vx = velocity.x;
+      marble.vy = velocity.y;
+      return marble;
+    });
+    const releases = [];
+    for (let step = 0; step < 100 && releases.length < 2; step++) {
+      world.clearEvents();
+      world.update(marbles, dt, step * dt * 1000);
+      releases.push(...world.events.filter((event) => event.type === 'channel'));
+    }
+    assert.deepEqual(releases.map((event) => event.marbleId), [1, 2]);
+    for (const event of releases) {
+      const exit = rotate(event.x - piece.x, event.y - piece.y, -heading);
+      assert.ok(Math.abs(exit.x) < 1e-8);
+      assert.equal(Math.round(exit.y), CHANNEL_ENTRY);
+    }
+    assert.ok(marbles.every((marble) => !marble.channelRide && rotate(marble.vx, marble.vy, -heading).y < 0));
+  }
+});
+
+test('el dosificador respeta la cola y mantiene los tres intervalos en tiempo de simulación', () => {
+  for (const [variant, interval] of METER_INTERVALS.entries()) {
+    const world = new PhysicsWorld();
+    const meter = makePiece(1, 'meter', 0, 0);
+    meter.variant = variant;
+    world.rebuild([meter]);
+    const marbles = [1, 2, 3, 4].map((id) => createMarble(id, MARBLE_BY_ID.get('steel'), 0, CHANNEL_ENTRY, 0, 0));
+    const releases = [];
+    for (let step = 0; step < 600; step++) {
+      world.clearEvents();
+      // Un salto del reloj de pared no acelera el mecanismo.
+      world.update(marbles, dt, step * 70);
+      for (const event of world.events) if (event.type === 'channel') releases.push({ id: event.marbleId, time: step * dt });
+      if (step === 45) world.rebuild([meter]);
+    }
+    assert.deepEqual(releases.map((release) => release.id), [1, 2, 3, 4]);
+    for (let i = 1; i < releases.length; i++) {
+      assert.ok(Math.abs(releases[i].time - releases[i - 1].time - interval) <= dt + 1e-8);
+    }
+    assert.ok(marbles.every((marble) => !marble.channelRide));
+  }
+});
+
+test('el xilófono conserva el índice visual de la lámina cuando se afina', () => {
+  const world = new PhysicsWorld();
+  const xylo = makePiece(1, 'xylo5', 0, 0);
+  xylo.notes = [4, 1, 2, 3, 0];
+  world.rebuild([xylo]);
+  const marble = createMarble(1, MARBLE_BY_ID.get('crystal'), xyloLayout(5).xs[0], -100, 0, 0);
+  assert.ok(simulate(world, marble, (events) => events.some((e) => e.type === 'chime' && e.note === 0 && e.pitch === 4)));
+});
+
+test('el álbum migra partidas antiguas sin duplicarlas y reabre el último taller nombrado', () => {
+  const ramp = makePiece(1, 'ramp', 0, 100);
+  const fan = makePiece(2, 'fan', 10, 200);
+  const empty = { pieces: [] };
+  const previous = { activeWorld: 2, worlds: [empty, empty, { pieces: [ramp] }], settings: { sound: 0 } };
+  const storage = new Map([
+    ['marblelous.save.v1', JSON.stringify({ ...previous, worlds: [empty, empty, empty] })],
+    ['marblelous.lastgame.v1', JSON.stringify(previous)],
+    ['marblelous.backup.v1', JSON.stringify(previous)],
+    ['marblelous.snapshots.v1', JSON.stringify([{ activeWorld: 3, worlds: [empty, empty, empty, { pieces: [fan] }] }])]
+  ]);
+  const local = { getItem: (key) => storage.get(key) ?? null };
+  const migrated = findAlbum(local);
+  assert.deepEqual(migrated.workshops.map((w) => w.pieces[0].defId), ['ramp', 'fan']);
+  assert.equal(migrated.settings.sound, 0);
+  assert.equal(migrated.settings.haptics, true);
+  assert.equal(migrated.activeId, migrated.workshops[0].id);
+  migrated.workshops[1].name = 'Ritmo';
+  migrated.activeId = migrated.workshops[1].id;
+  migrated.settings.haptics = false;
+  storage.set(ALBUM_KEY, JSON.stringify(migrated));
+  const reloaded = findAlbum(local);
+  assert.equal(reloaded.workshops.find((w) => w.id === reloaded.activeId).name, 'Ritmo');
+  assert.equal(reloaded.settings.haptics, false);
+  assert.ok(storage.has('marblelous.lastgame.v1'));
 });

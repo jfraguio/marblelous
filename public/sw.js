@@ -1,6 +1,6 @@
 /* Marblelous — offline shell. Cero dependencias. */
 importScripts('./precache-manifest.js');
-const VERSION = 'marblelous-v14';
+const VERSION = 'marblelous-v15';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './precache-manifest.js'];
 const extra = Array.isArray(self.__MARBLELOUS_PRECACHE) ? self.__MARBLELOUS_PRECACHE : [];
 const ASSETS = new Set([...SHELL, ...extra].map((path) => new URL(path, self.registration.scope).href));

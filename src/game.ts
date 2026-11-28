@@ -5,11 +5,11 @@ import type {
   Particle,
   PhysEvent,
   Piece,
-  SaveData,
   Settings,
   Vec2,
-  WorldData
+  Workshop
 } from './types';
+import { ALBUM_KEY, DEFAULT_SETTINGS, findAlbum, newCamera, NORMAL_THEME, savedPiece } from './album';
 import { AudioEngine } from './audio';
 import { PhysicsWorld, contentBounds, createMarble } from './physics';
 import {
@@ -20,25 +20,21 @@ import {
   PALETTE,
   PIECE_BY_ID,
   FACTORY_OUTLET,
-  defaultLen,
+  METER_INTERVALS,
   getPieceDef,
   makePiece,
   pieceContains,
   pieceHitSize,
   pieceLength,
-  piecePorts
+  piecePorts,
+  xyloNotes
 } from './pieces';
 import { findSnap, type Snap } from './snap';
 import type { UI } from './ui';
 import { CAMERA_TILT, clamp, nowMs, prefersReducedMotion, vibrate } from './util';
 import { WORLD_THEMES } from './worlds';
-import { STRUCTURES, type StructurePiece } from './structures';
+import { FIRST_DROP, type StructurePiece } from './structures';
 
-const SAVE_KEY = 'marblelous.save.v1';
-const BACKUP_KEY = 'marblelous.backup.v1';
-const SNAPSHOTS_KEY = 'marblelous.snapshots.v1';
-const LAST_GAME_KEY = 'marblelous.lastgame.v1';
-const MAX_SNAPSHOTS = 5;
 /** La canica de cristal es la canica azul del juego. */
 const BLUE_MARBLE = 'crystal';
 const FIXED = 1 / 120;
@@ -47,9 +43,11 @@ const SURPRISE_MARBLES = MARBLE_TYPES.filter((type) => type.id !== 'surprise');
 type History =
   | { type: 'add'; piece: Piece }
   | { type: 'remove'; piece: Piece }
-  | { type: 'move'; id: number; fromX: number; fromY: number; toX: number; toY: number; fromRot: number; toRot: number }
+  | { type: 'move'; id: number; from: Vec2; to: Vec2 }
   | { type: 'rotate'; id: number; from: number; to: number }
   | { type: 'size'; id: number; from: number; to: number }
+  | { type: 'tempo'; id: number; from: number; to: number }
+  | { type: 'notes'; id: number; from: number[]; to: number[] }
   | { type: 'clear'; pieces: Piece[] };
 
 export class Game {
@@ -71,6 +69,7 @@ export class Game {
   armedDefId = '';
   armedSticky = false;
   selectedPieceId = 0;
+  testDropArmed = false;
   selectedMarble = 'crystal';
   ghost: Piece | null = null;
   snap: Snap | null = null;
@@ -82,19 +81,11 @@ export class Game {
   hidden = false;
   simulationPaused = false;
 
-  worlds: WorldData[] = [];
-  activeWorld = 0;
-  /** Últimas partidas borradas; la más reciente al final. */
-  snapshots: SaveData[] = [];
-  /** Última partida no vacía guardada, recuperable desde el menú. */
-  private lastSession: SaveData | null = null;
-  /** La sesión actual ya nació de una partida guardada o de piezas nuevas. */
-  private sessionEngaged = false;
-  settings: Settings = {
-    quality: 'auto',
-    haptics: false,
-    sound: 2
-  };
+  workshops: Workshop[] = [];
+  workshop!: Workshop;
+  settings: Settings = { ...DEFAULT_SETTINGS };
+  introMarbleId = 0;
+  private introTrialUntil = 0;
 
   private history: History[] = [];
   private redoStack: History[] = [];
@@ -106,7 +97,7 @@ export class Game {
   private dirty = false;
   private cooldowns = new Map<string, number>();
   private lastSnapAt = -Infinity;
-  private dragStartRot = 0;
+  private moveOrigin: (Vec2 & { id: number }) | null = null;
   private physicsDirty = false;
   private hudDirty = false;
   private saveIdlePending = false;
@@ -123,8 +114,6 @@ export class Game {
     this.canvas = canvas;
     this.audio = audio;
     this.load();
-    this.loadSnapshots();
-    this.rebuildPhysics();
     this.bindVisibility();
   }
 
@@ -136,20 +125,8 @@ export class Game {
     return this.pieceById.get(this.selectedPieceId) ?? null;
   }
 
-  get canUndo() {
-    return this.history.length > 0;
-  }
-
-  get canRedo() {
-    return this.redoStack.length > 0;
-  }
-
-  get hasLastSession() {
-    return !!this.lastSession;
-  }
-
-  get lastSessionAt() {
-    return this.lastSession?.updatedAt ?? 0;
+  get activeWorld(): number {
+    return this.workshop.theme;
   }
 
   private rebuildPhysics() {
@@ -208,6 +185,7 @@ export class Game {
         this.alpha = this.accumulator / FIXED;
       }
       this.updateEffects(raw * this.timeScale, now);
+      if (this.introMarbleId && now >= this.introTrialUntil) this.introMarbleId = 0;
       this.maybeSave(now);
       if (this.hudDirty) {
         this.hudDirty = false;
@@ -266,7 +244,10 @@ export class Game {
   }
 
   clearMarbles() {
+    for (const m of this.marbles) m.alive = false;
     this.marbles.length = 0;
+    this.introMarbleId = 0;
+    this.physics.clearMeters();
     this.particles.length = 0;
     this.audio.ui();
   }
@@ -324,7 +305,26 @@ export class Game {
   }
 
   saveCamera() {
-    this.worlds[this.activeWorld].camera = { ...this.camera };
+    this.requestSave();
+  }
+
+  startIntroMarble() {
+    if ((this.workshop.intro !== 'drop' && this.workshop.intro !== 'again') || this.introMarbleId) return;
+    const marble = this.spawnMarble(FIRST_DROP.x, FIRST_DROP.y);
+    if (!marble) return;
+    if (this.simulationPaused) this.toggleSimulation();
+    if (this.workshop.intro === 'again') {
+      this.dismissIntro();
+      return;
+    }
+    this.introMarbleId = marble.id;
+    this.introTrialUntil = performance.now() + 7200;
+  }
+
+  dismissIntro() {
+    if (!this.workshop.intro) return;
+    this.workshop.intro = undefined;
+    this.introMarbleId = 0;
     this.requestSave();
   }
 
@@ -358,6 +358,7 @@ export class Game {
       return;
     }
     this.armedDefId = defId;
+    this.testDropArmed = false;
     this.armedSticky = sticky;
     this.selectedPieceId = 0;
     this.mode = 'build';
@@ -388,6 +389,12 @@ export class Game {
     if (!this.selectedPieceId) return;
     this.selectedPieceId = 0;
     this.ui?.updateSelection();
+  }
+
+  toggleTestDrop() {
+    this.testDropArmed = !this.testDropArmed;
+    this.clearPreview();
+    this.dropPreview = null;
   }
 
   getPieceAt(wx: number, wy: number): Piece | null {
@@ -481,19 +488,22 @@ export class Game {
   }
 
   beginMove(p: Piece) {
-    this.dragStartRot = p.rot;
+    this.moveOrigin = { id: p.id, x: p.x, y: p.y };
     this.snap = null;
-    this.selectPiece(p.id);
   }
 
-  movePieceTo(p: Piece, x: number, y: number) {
+  movePieceTo(p: Piece, x: number, y: number, precise: boolean) {
+    if (this.moveOrigin?.id !== p.id) return;
     const fromX = p.x;
     const fromY = p.y;
-    this.positionPiece(p, x, y);
-    if (p.x === fromX && p.y === fromY) return;
-    this.physicsDirty = true;
-    this.bumpPieces();
-    this.wakeMarbles();
+    if (precise) {
+      this.snap = null;
+      p.x = x;
+      p.y = y;
+    } else {
+      this.positionPiece(p, x, y);
+    }
+    if (p.x !== fromX || p.y !== fromY) this.positionsChanged();
   }
 
   private positionPiece(p: Piece, x: number, y: number) {
@@ -516,27 +526,74 @@ export class Game {
     if (this.settings.haptics) vibrate(12);
   }
 
-  cancelMove(p: Piece, x: number, y: number) {
-    p.x = x;
-    p.y = y;
-    p.rot = this.dragStartRot;
+  cancelMove() {
+    if (!this.moveOrigin) return;
+    const origin = this.moveOrigin;
+    this.moveOrigin = null;
     this.snap = null;
-    this.bumpPieces();
-    this.rebuildPhysics();
-    this.wakeMarbles();
-    this.requestSave();
+    const p = this.pieceById.get(origin.id);
+    if (!p) return;
+    p.x = origin.x;
+    p.y = origin.y;
+    this.positionsChanged();
   }
 
-  endMove(p: Piece, fromX: number, fromY: number) {
+  endMove() {
+    const origin = this.moveOrigin;
+    this.moveOrigin = null;
     const snap = this.snap;
     this.snap = null;
-    if (Math.abs(p.x - fromX) < 0.1 && Math.abs(p.y - fromY) < 0.1) return;
+    if (!origin) return;
+    const p = this.pieceById.get(origin.id);
+    if (!p || (p.x === origin.x && p.y === origin.y)) return;
     if (snap) this.confirmSnap(snap);
-    this.history.push({ type: 'move', id: p.id, fromX, fromY, toX: p.x, toY: p.y, fromRot: this.dragStartRot, toRot: p.rot });
+    this.remember({ type: 'move', id: p.id, from: origin, to: { x: p.x, y: p.y } });
+  }
+
+  nudgeSelection(x: number, y: number) {
+    const p = this.selectedPiece;
+    if (!p || this.moveOrigin) return;
+    const from = { x: p.x, y: p.y };
+    p.x += x * 4 / this.camera.zoom;
+    p.y += y * 4 / (this.camera.zoom * CAMERA_TILT);
+    this.positionsChanged();
+    this.remember({ type: 'move', id: p.id, from, to: { x: p.x, y: p.y } });
+  }
+
+  private positionsChanged() {
+    this.physicsDirty = true;
+    this.bumpPieces();
+    this.wakeMarbles();
+  }
+
+  private remember(edit: History) {
+    if (this.workshop.intro === 'edit' && (edit.type === 'move' || edit.type === 'rotate') &&
+        this.pieceById.get(edit.id)?.defId === 'sTrack') {
+      this.workshop.intro = 'again';
+    }
+    this.history.push(edit);
     this.history = this.history.slice(-60);
     this.redoStack.length = 0;
     this.requestSave();
     this.requestHud();
+  }
+
+  cycleTempo(piece: Piece) {
+    const from = piece.variant;
+    piece.variant = (from + 1) % METER_INTERVALS.length;
+    this.physicsDirty = true;
+    this.remember({ type: 'tempo', id: piece.id, from, to: piece.variant });
+    this.audio.ui();
+  }
+
+  tuneBar(piece: Piece, bar: number, pitch: number) {
+    const from = xyloNotes(piece.notes);
+    if (from[bar] === pitch) return;
+    piece.notes = from.slice();
+    piece.notes[bar] = pitch;
+    this.physicsDirty = true;
+    this.remember({ type: 'notes', id: piece.id, from, to: piece.notes });
+    this.audio.playChime(pitch, 315, this.panForX(piece.x));
   }
 
   setPieceRot(p: Piece, rot: number, commit = false, from = 0) {
@@ -546,11 +603,7 @@ export class Game {
       this.wakeMarbles();
     }
     if (commit && Math.abs(rot - from) > 0.001) {
-      this.history.push({ type: 'rotate', id: p.id, from, to: rot });
-      this.history = this.history.slice(-60);
-      this.redoStack.length = 0;
-      this.requestSave();
-      this.requestHud();
+      this.remember({ type: 'rotate', id: p.id, from, to: rot });
     }
   }
 
@@ -664,16 +717,11 @@ export class Game {
     const dx = Math.cos(p.rot) * span;
     const dy = Math.sin(p.rot) * span;
     const clone: Piece = {
-      ...p,
+      ...savedPiece(p),
       id: this.nextId++,
       x: p.x + dx,
       y: p.y + dy,
-      bornAt: performance.now(),
-      flash: undefined,
-      anim: undefined,
-      disabledUntil: undefined,
-      charge: undefined,
-      emitAt: undefined
+      bornAt: performance.now()
     };
     const snap = findSnap(clone, this.pieces, this.camera.zoom);
     if (snap) {
@@ -685,17 +733,24 @@ export class Game {
 
   clearCanvas() {
     if (this.pieces.length === 0 && this.marbles.length === 0) return;
-    this.archiveGame();
-    this.sessionEngaged = true;
+    this.cancelMove();
+    if (this.pieces.length) {
+      this.captureWorkshop();
+      const backup = this.makeWorkshop(`${this.workshop.name.slice(0, 30)} · copia`, [], this.activeWorld);
+      backup.pieces = this.workshop.pieces;
+      backup.camera = { ...this.camera };
+      this.workshops.push(backup);
+    }
+    this.dismissIntro();
     this.history.push({ type: 'clear', pieces: this.pieces });
     this.history = this.history.slice(-60);
     this.redoStack.length = 0;
     this.pieces = [];
     this.bumpPieces();
-    this.worlds[this.activeWorld].pieces = this.pieces;
     this.marbles = [];
     this.particles = [];
     this.selectedPieceId = 0;
+    this.testDropArmed = false;
     this.armedDefId = '';
     this.armedSticky = false;
     this.clearPreview();
@@ -714,66 +769,15 @@ export class Game {
     this.ui?.toast('trash');
   }
 
-  /** Guarda el estado actual en la cola de partidas borradas. */
-  private archiveGame() {
-    this.archiveSave(this.buildSaveData());
-  }
-
-  private archiveSave(data: SaveData) {
-    this.snapshots.push(data);
-    if (this.snapshots.length > MAX_SNAPSHOTS) {
-      this.snapshots.splice(0, this.snapshots.length - MAX_SNAPSHOTS);
-    }
-    this.persistSnapshots();
-  }
-
-  loadSnapshot(index: number) {
-    const snapshot = this.snapshots[index];
-    if (!snapshot) return false;
-    if (this.pieces.length || this.marbles.length) {
-      this.archiveGame();
-      this.sessionEngaged = true;
-    }
-    try {
-      this.restoreSave(snapshot);
-    } catch {
-      return false;
-    }
-    this.marbles = [];
-    this.particles = [];
-    this.history = [];
-    this.redoStack = [];
-    this.selectedPieceId = 0;
-    this.armedDefId = '';
-    this.armedSticky = false;
-    this.clearPreview();
-    this.snapRipple = null;
-    this.dropPreview = null;
-    this.timeScale = 1;
-    this.slowUntil = 0;
-    document.body.classList.remove('armed');
-    this.rebuildPhysics();
-    this.physics.clearDisabled();
-    this.dirty = true;
-    this.save();
-    this.ui?.refreshAll();
-    return true;
-  }
-
-  /** Recupera la última partida no vacía guardada, desde Ajustes. */
-  resumeLastSession(): boolean {
-    const last = this.lastSession;
-    if (!last) return false;
-    if (this.pieces.length || this.marbles.length) {
-      this.archiveGame();
-      this.sessionEngaged = true;
-    }
-    try {
-      this.restoreSave(last);
-    } catch {
-      return false;
-    }
-    this.sessionEngaged = true;
+  private activateWorkshop(workshop: Workshop) {
+    this.workshop = workshop;
+    this.pieces = workshop.pieces.map(savedPiece);
+    this.camera = { ...workshop.camera };
+    this.nextId = Math.max(0, ...this.pieces.map((p) => p.id)) + 1;
+    this.introMarbleId = 0;
+    this.moveOrigin = null;
+    this.testDropArmed = false;
+    this.simulationPaused = false;
     this.marbles = [];
     this.particles = [];
     this.history = [];
@@ -788,89 +792,70 @@ export class Game {
     this.slowUntil = 0;
     this.mode = 'build';
     document.body.classList.remove('armed');
-    this.rebuildPhysics();
-    this.physics.clearDisabled();
-    this.dirty = true;
-    this.save();
-    this.ui?.refreshAll();
-    return true;
-  }
-
-  /** Carga una de las composiciones catalogadas en Ajustes > Estructuras. */
-  loadStructure(index: number): boolean {
-    const def = STRUCTURES[index];
-    if (!def) return false;
-    if (this.pieces.length || this.marbles.length) {
-      this.archiveGame();
-      this.sessionEngaged = true;
-    }
-    this.marbles = [];
-    this.particles = [];
-    this.history = [];
-    this.redoStack = [];
-    this.selectedPieceId = 0;
-    this.armedDefId = '';
-    this.armedSticky = false;
-    this.clearPreview();
-    this.snapRipple = null;
-    this.dropPreview = null;
-    this.timeScale = 1;
-    this.slowUntil = 0;
-    this.nextId = 1;
-    this.pieces = def.pieces.map((sp) => this.makeStructurePiece(sp));
+    this.physics = new PhysicsWorld();
+    this.cooldowns.clear();
     this.bumpPieces();
-    this.worlds[this.activeWorld].pieces = this.pieces;
-    this.mode = 'build';
-    document.body.classList.remove('armed');
     this.rebuildPhysics();
-    this.physics.clearDisabled();
+  }
+
+  newWorkshop(name = 'Nuevo taller', pieces: StructurePiece[] = [], guided = false) {
+    this.cancelMove();
+    this.captureWorkshop();
+    const workshop = this.makeWorkshop(name, pieces, this.activeWorld);
+    if (guided) workshop.intro = 'drop';
+    this.workshops.push(workshop);
+    this.activateWorkshop(workshop);
     this.recenter();
-    this.dirty = true;
+    this.requestSave();
     this.save();
     this.ui?.refreshAll();
-    return true;
   }
 
-  private makeStructurePiece(sp: StructurePiece): Piece {
-    const def = getPieceDef(sp.defId);
-    return {
-      id: this.nextId++,
-      defId: sp.defId,
-      x: sp.x,
-      y: sp.y,
-      rot: sp.rot ?? 0,
-      len: sp.len ?? defaultLen(sp.defId),
-      color: sp.color ?? def.defaultColor,
-      variant: sp.variant ?? 0,
-      polarity: sp.defId === 'electromagnet' ? (sp.polarity ?? 1) : undefined,
-      powered: sp.defId === 'marbleFactory' ? sp.powered !== false : undefined,
-      bornAt: performance.now()
-    };
+  openWorkshop(id: string) {
+    const workshop = this.workshops.find((item) => item.id === id);
+    if (!workshop || this.workshop === workshop) return;
+    this.cancelMove();
+    this.captureWorkshop();
+    this.activateWorkshop(workshop);
+    this.requestSave();
+    this.save();
+    this.ui?.refreshAll();
   }
 
-  private loadSnapshots() {
-    try {
-      const raw = localStorage.getItem(SNAPSHOTS_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as unknown;
-      if (!Array.isArray(parsed)) return;
-      this.snapshots = parsed
-        .filter((item): item is SaveData => !!item && typeof item === 'object' && Array.isArray((item as SaveData).worlds))
-        .slice(-MAX_SNAPSHOTS);
-    } catch {
-      this.snapshots = [];
+  renameWorkshop(id: string, value: string) {
+    const workshop = this.workshops.find((item) => item.id === id);
+    const name = value.trim().slice(0, 48);
+    if (!workshop || !name || workshop.name === name) return;
+    workshop.name = name;
+    workshop.updatedAt = Date.now();
+    this.requestSave();
+    this.save();
+  }
+
+  deleteWorkshop(id: string) {
+    this.workshops = this.workshops.filter((workshop) => workshop.id !== id);
+    if (this.workshop.id === id) {
+      if (!this.workshops.length) this.workshops.push(this.makeWorkshop('Nuevo taller', [], this.activeWorld));
+      this.activateWorkshop(this.workshops[0]);
     }
+    this.requestSave();
+    this.save();
+    this.ui?.refreshAll();
   }
 
-  private persistSnapshots() {
-    try {
-      localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(this.snapshots));
-    } catch {
-      /* sin espacio: las partidas guardadas siguen en memoria */
-    }
+  private makeWorkshop(name: string, layout: StructurePiece[], theme: number): Workshop {
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+    const pieces = layout.map((sp, i) => ({
+      ...makePiece(i + 1, sp.defId, sp.x, sp.y, sp.rot, sp.len),
+      color: sp.color ?? getPieceDef(sp.defId).defaultColor,
+      variant: sp.variant ?? (sp.defId === 'meter' ? 1 : 0), polarity: sp.polarity,
+      powered: sp.defId === 'marbleFactory' ? sp.powered !== false : undefined, notes: sp.notes
+    }));
+    return { id, name, pieces, updatedAt: Date.now(), theme, camera: newCamera() };
   }
 
   undo() {
+    this.cancelMove();
     const h = this.history.pop();
     if (!h) return;
     this.applyHistory(h, true);
@@ -882,6 +867,7 @@ export class Game {
   }
 
   redo() {
+    this.cancelMove();
     const h = this.redoStack.pop();
     if (!h) return;
     this.applyHistory(h, false);
@@ -906,11 +892,11 @@ export class Game {
         this.pieces = this.pieces.filter((p) => p.id !== h.piece.id);
       }
     } else if (h.type === 'move') {
-      const p = this.pieces.find((x) => x.id === h.id);
+      const p = this.pieceById.get(h.id);
+      const position = undo ? h.from : h.to;
       if (p) {
-        p.x = undo ? h.fromX : h.toX;
-        p.y = undo ? h.fromY : h.toY;
-        p.rot = undo ? h.fromRot : h.toRot;
+        p.x = position.x;
+        p.y = position.y;
       }
     } else if (h.type === 'rotate') {
       const p = this.pieces.find((x) => x.id === h.id);
@@ -918,12 +904,17 @@ export class Game {
     } else if (h.type === 'size') {
       const p = this.pieces.find((x) => x.id === h.id);
       if (p) p.len = undo ? h.from : h.to;
+    } else if (h.type === 'tempo') {
+      const p = this.pieceById.get(h.id);
+      if (p) p.variant = undo ? h.from : h.to;
+    } else if (h.type === 'notes') {
+      const p = this.pieceById.get(h.id);
+      if (p) p.notes = undo ? h.from : h.to;
     } else if (h.type === 'clear') {
       this.pieces = undo ? h.pieces : [];
     }
     this.selectedPieceId = 0;
     this.bumpPieces();
-    this.worlds[this.activeWorld].pieces = this.pieces;
     this.rebuildPhysics();
     this.wakeMarbles();
     this.ui?.updateSelection();
@@ -995,14 +986,19 @@ export class Game {
     for (const e of this.physics.events) {
       const pan = this.panForX(e.x);
       if (e.type === 'chime') {
+        if (this.introMarbleId === e.marbleId && this.workshop.intro === 'drop') {
+          this.workshop.intro = 'edit';
+          this.introMarbleId = 0;
+          this.requestSave();
+        }
         if (!this.allow(`chime:${e.pieceId}:${e.note}`, 88, now)) continue;
         const p = this.pieceById.get(e.pieceId);
         if (p) {
           p.flash = now;
           p.flashNote = e.note;
         }
-        this.audio.playChime(e.note, e.impact, pan);
-        this.spawnBurst(e.x, e.y, NOTE_COLORS[e.note] ?? PALETTE.yellow, 5, 1);
+        this.audio.playChime(e.pitch ?? e.note, e.impact, pan);
+        this.spawnBurst(e.x, e.y, NOTE_COLORS[e.pitch ?? e.note] ?? PALETTE.yellow, 5, 1);
       } else if (e.type === 'hourglass') {
         const p = this.pieceById.get(e.pieceId);
         this.slowUntil = Math.max(this.slowUntil, now + 5000);
@@ -1048,6 +1044,10 @@ export class Game {
         const p = this.pieceById.get(e.pieceId);
         if (p) p.flash = now;
         if (this.allow(`fan:${e.pieceId}`, 150, now)) this.audio.air(pan);
+      } else if (e.type === 'channel') {
+        const p = this.pieceById.get(e.pieceId);
+        if (p) p.flash = now;
+        if (this.allow(`channel:${e.pieceId}`, 90, now)) this.audio.clack(pan, false);
       } else if (e.type === 'contact') {
         if (Math.abs(e.x - this.camera.x) > this.viewW * 0.6 / this.camera.zoom) continue;
         if (Math.abs(e.y - this.camera.y) > this.viewH * 0.6 / (this.camera.zoom * CAMERA_TILT)) continue;
@@ -1137,6 +1137,7 @@ export class Game {
       m.sleepTimer = 0;
       m.ridePiece = 0;
       m.fanRide = undefined;
+      m.channelRide = undefined;
       m.rideT = 0;
       m.rideScale = 1;
       m.rideDepth = 0;
@@ -1149,7 +1150,7 @@ export class Game {
   private updateTrails(dt: number) {
     if (this.settings.quality === 'low' || prefersReducedMotion()) return;
     for (const m of this.marbles) {
-      if (!m.awake || m.fanRide || m.vx * m.vx + m.vy * m.vy < 1600 || !MARBLE_BY_ID.get(m.typeId)?.premium) continue;
+      if (!m.awake || m.fanRide || m.channelRide || m.vx * m.vx + m.vy * m.vy < 1600 || !MARBLE_BY_ID.get(m.typeId)?.premium) continue;
       m.trailAcc += dt;
       if (m.trailAcc < 0.045) continue;
       m.trailAcc = 0;
@@ -1394,238 +1395,57 @@ export class Game {
   }
 
   setWorld(i: number) {
-    if (i === this.activeWorld || i < 0 || i >= this.worlds.length) return;
-    this.activeWorld = i;
+    if (i === this.activeWorld || i < 0 || i >= WORLD_THEMES.length) return;
+    this.workshop.theme = i;
     this.dirty = true;
     this.save();
     this.ui?.refreshSettings();
   }
 
-  resetProgress() {
-    try {
-      localStorage.removeItem(SAVE_KEY);
-      localStorage.removeItem(BACKUP_KEY);
-      localStorage.removeItem(SNAPSHOTS_KEY);
-      localStorage.removeItem(LAST_GAME_KEY);
-    } catch {
-      /* noop */
-    }
-    this.lastSession = null;
-    location.reload();
-  }
-
   // ---------------- persistence ----------------
 
-  private readSave(key: string): SaveData | null {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return null;
-      const data = JSON.parse(raw) as SaveData;
-      return data && typeof data === 'object' ? data : null;
-    } catch {
-      return null;
-    }
-  }
-
-  private saveHasPieces(data: SaveData): boolean {
-    return data.worlds.some((w) => (w.pieces?.length ?? 0) > 0);
-  }
-
-  private persistLastSession(data: SaveData) {
-    try {
-      localStorage.setItem(LAST_GAME_KEY, JSON.stringify(data));
-    } catch {
-      /* sin espacio: la partida sigue en memoria hasta cerrar */
-    }
-  }
-
-  /**
-   * El taller arranca siempre vacío y en el cielo. La última partida no vacía
-   * se conserva aparte para poder reanudarla desde Ajustes.
-   */
   private load() {
-    const fallback = this.defaults();
-    this.fresh = true;
-    const live = this.readSave(SAVE_KEY) ?? this.readSave(BACKUP_KEY);
-    let preferences: SaveData | null = null;
-    if (live) {
-      try {
-        const normalized = this.normalize(live, fallback);
-        preferences = normalized;
-        if (this.saveHasPieces(normalized)) {
-          this.lastSession = normalized;
-          this.persistLastSession(normalized);
-        }
-      } catch {
-        /* partida corrupta */
-      }
+    let data: ReturnType<typeof findAlbum> = null;
+    let needsSave = true;
+    try {
+      data = findAlbum(localStorage);
+      needsSave = !localStorage.getItem(ALBUM_KEY);
+    } catch {
+      /* El taller sigue siendo jugable si el navegador bloquea el almacenamiento. */
     }
-    if (!this.lastSession) {
-      const previous = this.readSave(LAST_GAME_KEY);
-      if (previous) {
-        try {
-          const normalized = this.normalize(previous, fallback);
-          if (this.saveHasPieces(normalized)) this.lastSession = normalized;
-        } catch {
-          /* ignorar */
-        }
-      }
-    }
-    if (!preferences && this.lastSession) preferences = this.lastSession;
-    const fresh = this.defaults();
-    if (preferences) {
-      fresh.selectedMarble = preferences.selectedMarble;
-      fresh.settings = preferences.settings;
-    }
-    this.applySave(fresh);
-    // Guarda el lienzo vacío para no volver a leer la partida anterior al abrir.
-    this.save();
-  }
-
-  private defaults(): SaveData {
-    const empty = (): WorldData => ({
-      pieces: [],
-      camera: { x: 0, y: 0, zoom: 1 }
-    });
-    const sky = Math.max(0, WORLD_THEMES.findIndex((t) => t.id === 'sky'));
-    return {
-      v: 1,
-      updatedAt: Date.now(),
-      activeWorld: sky,
-      worlds: WORLD_THEMES.map(() => empty()),
-      settings: {
-        quality: 'auto',
-        haptics: false,
-        sound: 2
-      },
-      selectedMarble: 'crystal'
-    };
-  }
-
-  private normalize(data: SaveData, fallback: SaveData): SaveData {
-    const worlds: WorldData[] = [];
-    for (let i = 0; i < WORLD_THEMES.length; i++) {
-      const w = data.worlds?.[i] ?? fallback.worlds[i];
-      const pieces: Piece[] = [];
-      for (const raw of w.pieces ?? []) {
-        if (!raw || !PIECE_BY_ID.has(raw.defId)) continue;
-        const p: Piece = {
-          id: Number(raw.id) || pieces.length + 1,
-          defId: raw.defId,
-          x: Number(raw.x) || 0,
-          y: Number(raw.y) || 0,
-          rot: Number(raw.rot) || 0,
-          len: Number(raw.len) || defaultLen(raw.defId),
-          color: Number.isFinite(raw.color) ? raw.color : getPieceDef(raw.defId).defaultColor,
-          variant: Number(raw.variant) || 0,
-          polarity: raw.defId === 'electromagnet' && Number(raw.polarity) < 0 ? -1 : undefined,
-          powered: raw.defId === 'marbleFactory' ? raw.powered !== false : undefined
-        };
-        pieces.push(p);
-      }
-      worlds.push({
-        pieces,
-        camera: {
-          x: Number(w.camera?.x) || 0,
-          y: Number(w.camera?.y) || 0,
-          zoom: clamp(Number(w.camera?.zoom) || 1, 0.3, 2.5)
-        }
-      });
-    }
-    return {
-      v: 1,
-      updatedAt: Number(data.updatedAt) || Date.now(),
-      activeWorld: clamp(Number(data.activeWorld) || 0, 0, WORLD_THEMES.length - 1),
-      worlds,
-      settings: {
-        quality: (data.settings?.quality ?? fallback.settings.quality) as Settings['quality'],
-        haptics: !!(data.settings?.haptics ?? fallback.settings.haptics),
-        sound: data.settings?.sound === 0 || data.settings?.sound === 1 ? data.settings.sound : 2
-      },
-      selectedMarble: MARBLE_BY_ID.has(data.selectedMarble) ? data.selectedMarble : 'crystal'
-    };
-  }
-
-  private restoreSave(data: SaveData) {
-    const save = this.normalize(data, this.defaults());
-    save.settings.sound = this.settings.sound;
-    this.applySave(save);
-  }
-
-  private applySave(data: SaveData) {
-    this.worlds = data.worlds;
-    this.activeWorld = data.activeWorld;
-    const active = this.worlds[this.activeWorld];
-    const source = active.pieces.length ? active : this.worlds.find((w) => w.pieces.length) ?? active;
-    this.pieces = source.pieces;
-    this.bumpPieces();
-    this.camera = source.camera ?? { x: 0, y: 0, zoom: 1 };
-    if (source !== active) {
-      active.pieces = source.pieces;
-      active.camera = source.camera;
-    }
-    this.settings = data.settings;
+    this.settings = data?.settings ?? { ...DEFAULT_SETTINGS };
+    this.selectedMarble = data?.selectedMarble ?? 'crystal';
     this.applySettings();
-    this.selectedMarble = data.selectedMarble;
-    this.nextId = Math.max(0, ...this.pieces.map((p) => p.id)) + 1;
+    if (data?.workshops.length) {
+      this.workshops = data.workshops;
+      this.activateWorkshop(this.workshops.find((item) => item.id === data.activeId) ?? this.workshops[0]);
+    } else {
+      const first = this.makeWorkshop('Mi taller', [], NORMAL_THEME);
+      this.workshops = [first];
+      this.activateWorkshop(first);
+      this.fresh = true;
+    }
+    if (needsSave || this.fresh) this.requestSave();
   }
 
-  /** Instantánea serializable del estado actual (sin modificar los mundos). */
-  private buildSaveData(): SaveData {
-    const activeIndex = this.activeWorld;
-    return {
-      v: 1,
-      updatedAt: Date.now(),
-      activeWorld: this.activeWorld,
-      worlds: this.worlds.map((w, i) => {
-        const pieces = i === activeIndex ? this.pieces : w.pieces;
-        return {
-          pieces: pieces.map((p) => ({
-            id: p.id,
-            defId: p.defId,
-            x: Math.round(p.x * 10) / 10,
-            y: Math.round(p.y * 10) / 10,
-            rot: Math.round(p.rot * 1000) / 1000,
-            len: p.len,
-            color: p.color,
-            variant: p.variant,
-            polarity: p.defId === 'electromagnet' ? (p.polarity ?? 1) : undefined,
-            powered: p.defId === 'marbleFactory' ? p.powered !== false : undefined
-          })),
-          camera: i === activeIndex ? { ...this.camera } : { ...w.camera }
-        };
-      }),
-      settings: { ...this.settings },
-      selectedMarble: this.selectedMarble
-    };
+  private captureWorkshop() {
+    const origin = this.moveOrigin;
+    this.workshop.pieces = this.pieces.map((p) => savedPiece(p.id === origin?.id ? { ...p, x: origin.x, y: origin.y } : p));
+    this.workshop.camera = { ...this.camera };
+    if (this.dirty) this.workshop.updatedAt = Date.now();
   }
 
   save() {
-    const active = this.worlds[this.activeWorld];
-    for (const w of this.worlds) {
-      if (w !== active) w.pieces = [];
-    }
-    active.pieces = this.pieces;
-    active.camera = { ...this.camera };
-    const data = this.buildSaveData();
+    if (!this.dirty) return;
+    this.captureWorkshop();
+    this.lastSave = performance.now();
     try {
-      const prev = localStorage.getItem(SAVE_KEY);
-      if (prev) localStorage.setItem(BACKUP_KEY, prev);
-      const serialized = JSON.stringify(data);
-      localStorage.setItem(SAVE_KEY, serialized);
-      if (this.saveHasPieces(data)) {
-        if (!this.sessionEngaged && this.lastSession) {
-          // La partida anterior queda a salvo en la cola de Partidas.
-          this.archiveSave(this.lastSession);
-        }
-        this.sessionEngaged = true;
-        this.lastSession = data;
-        localStorage.setItem(LAST_GAME_KEY, serialized);
-      }
-      this.lastSave = performance.now();
+      localStorage.setItem(ALBUM_KEY, JSON.stringify({
+        v: 2, activeId: this.workshop.id, workshops: this.workshops, settings: this.settings, selectedMarble: this.selectedMarble
+      }));
       this.dirty = false;
     } catch {
-      this.ui?.toast('info');
+      this.ui?.toast('info', 'No se pudo guardar el álbum');
     }
   }
 }

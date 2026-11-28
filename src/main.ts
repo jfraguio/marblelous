@@ -1,4 +1,5 @@
 import './style.css';
+import { clearWorkshopStorage } from './album';
 import { AudioEngine } from './audio';
 import { Game } from './game';
 import { Input } from './input';
@@ -10,10 +11,7 @@ const audio = new AudioEngine();
 
 if (new URLSearchParams(location.search).has('reset')) {
   try {
-    localStorage.removeItem('marblelous.save.v1');
-    localStorage.removeItem('marblelous.backup.v1');
-    localStorage.removeItem('marblelous.snapshots.v1');
-    localStorage.removeItem('marblelous.lastgame.v1');
+    clearWorkshopStorage(localStorage);
   } catch {
     /* noop */
   }
@@ -29,35 +27,6 @@ game.renderer = renderer;
 game.ui = ui;
 if (game.fresh) game.recenter();
 game.start();
-
-// Transición de entrada: el lienzo se revela cuando el nombre termina de asentarse.
-const intro = document.getElementById('intro');
-if (intro) {
-  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let done = false;
-  const finish = () => {
-    if (done) return;
-    done = true;
-    intro.classList.add('is-out');
-    document.body.classList.remove('intro-open');
-    window.setTimeout(() => intro.remove(), reduced ? 40 : 480);
-  };
-  const timer = window.setTimeout(finish, reduced ? 160 : 1110);
-  intro.addEventListener(
-    'pointerdown',
-    () => {
-      window.clearTimeout(timer);
-      finish();
-    },
-    { once: true }
-  );
-  intro.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') {
-      window.clearTimeout(timer);
-      finish();
-    }
-  });
-}
 
 // útil para soporte y pruebas; no expone datos personales
 (window as unknown as { marblelous: unknown }).marblelous = { game, renderer, ui, input, audio };
