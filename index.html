@@ -20,7 +20,11 @@
 
     <div id="hud" aria-live="off">
       <header class="topbar">
-        <nav class="top-actions">
+        <nav class="top-actions" aria-label="Controles del taller">
+          <button class="ibtn" id="btn-undo" aria-label="Deshacer" title="Deshacer" disabled><svg class="ic"><use href="#i-undo"></use></svg></button>
+          <button class="ibtn" id="btn-redo" aria-label="Rehacer" title="Rehacer" disabled><svg class="ic"><use href="#i-redo"></use></svg></button>
+          <button class="ibtn" id="btn-pause" aria-label="Pausar simulación" aria-pressed="false" title="Pausar simulación (P)"><svg class="ic"><use href="#i-pause"></use></svg></button>
+          <button class="ibtn" id="btn-sweep" aria-label="Retirar canicas" title="Retirar canicas" disabled><svg class="ic"><use href="#i-sweep"></use></svg></button>
           <button class="ibtn" id="btn-settings" aria-label="Ajustes"><svg class="ic"><use href="#i-settings"></use></svg></button>
         </nav>
       </header>
@@ -106,6 +110,11 @@
       <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
       <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
       <symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4V8Z" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14m6-14v14" stroke-width="2.7"/></symbol>
+      <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 5 4 10l5 5m-5-5h10a5 5 0 0 1 0 10h-2"/></symbol>
+      <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 5 5 5-5 5m5-5H10a5 5 0 0 0 0 10h2"/></symbol>
+      <symbol id="i-sweep" viewBox="0 0 24 24"><path d="m11 10 5-6m-7 7 5 4m-5-4-5 6 7 4 3-6m5 1h2m-5 4h3"/></symbol>
+      <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 10v4h4l4 4V6l-4 4H4m11-1a4 4 0 0 1 0 6m2-8a7 7 0 0 1 0 10"/></symbol>
       <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
       <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/></symbol>
       <symbol id="i-note" viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></symbol>

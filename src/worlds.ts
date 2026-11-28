@@ -1,4 +1,4 @@
-export type WorldKind = 'studio' | 'ocean' | 'sky' | 'space' | 'volcano';
+export type WorldKind = 'studio' | 'ocean' | 'sky' | 'space' | 'volcano' | 'garden';
 
 export interface WorldTheme {
   id: string;
@@ -14,15 +14,15 @@ export interface WorldTheme {
   shade: string;
 }
 
-/** Cuatro mundos con fondos y detalles deliberadamente sutiles. */
+/** Los índices se conservan para que las partidas anteriores mantengan su fondo. */
 export const WORLD_THEMES: WorldTheme[] = [
   {
     id: 'studio',
     name: 'Normal',
     kind: 'studio',
-    paper: '#F2EFE7',
-    paper2: '#E9E4D8',
-    grid: 'rgba(220,214,200,0.62)',
+    paper: '#FBF5EA',
+    paper2: '#E7DBCA',
+    grid: 'rgba(117,90,64,0.15)',
     ink: '#23211C',
     inkSoft: '#5F5A50',
     accent: '#3D7EA6',
@@ -33,9 +33,9 @@ export const WORLD_THEMES: WorldTheme[] = [
     id: 'ocean',
     name: 'Fondo marino',
     kind: 'ocean',
-    paper: '#DDEDEA',
-    paper2: '#CFE4E0',
-    grid: 'rgba(140,190,185,0.55)',
+    paper: '#E4F3EB',
+    paper2: '#B9D8D6',
+    grid: 'rgba(52,115,117,0.16)',
     ink: '#1E2E2E',
     inkSoft: '#4E6B6B',
     accent: '#2E9E97',
@@ -46,9 +46,9 @@ export const WORLD_THEMES: WorldTheme[] = [
     id: 'sky',
     name: 'Cielo',
     kind: 'sky',
-    paper: '#E4EFF7',
-    paper2: '#D6E7F2',
-    grid: 'rgba(170,200,220,0.55)',
+    paper: '#E8F4F5',
+    paper2: '#C3DCEB',
+    grid: 'rgba(70,116,146,0.16)',
     ink: '#202A34',
     inkSoft: '#52657A',
     accent: '#5B9BD5',
@@ -59,9 +59,9 @@ export const WORLD_THEMES: WorldTheme[] = [
     id: 'space',
     name: 'Espacio',
     kind: 'space',
-    paper: '#0B0E1C',
-    paper2: '#10152A',
-    grid: 'rgba(150,175,225,0.2)',
+    paper: '#182239',
+    paper2: '#101627',
+    grid: 'rgba(166,186,225,0.21)',
     ink: '#E8ECFF',
     inkSoft: '#A9B6D8',
     accent: '#7D5BA6',
@@ -72,14 +72,27 @@ export const WORLD_THEMES: WorldTheme[] = [
     id: 'volcano',
     name: 'Volcán',
     kind: 'volcano',
-    paper: '#21100D',
-    paper2: '#2C150F',
-    grid: 'rgba(255,150,90,0.16)',
+    paper: '#3B2528',
+    paper2: '#281818',
+    grid: 'rgba(255,193,142,0.20)',
     ink: '#FFE7D2',
     inkSoft: '#E7B69B',
     accent: '#FF6B35',
     light: 'rgba(255,120,50,0.17)',
     shade: 'rgba(0,0,0,0.38)'
+  },
+  {
+    id: 'garden',
+    name: 'Jardín',
+    kind: 'garden',
+    paper: '#F5F0DC',
+    paper2: '#DDE8D6',
+    grid: 'rgba(55,105,73,0.18)',
+    ink: '#253D32',
+    inkSoft: '#506954',
+    accent: '#6E9269',
+    light: 'rgba(255,251,235,0.51)',
+    shade: 'rgba(67,112,83,0.1)'
   }
 ];
 

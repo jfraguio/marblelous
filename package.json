@@ -1,12 +1,13 @@
 {
   "name": "marblelous",
   "private": true,
-  "version": "1.11.0",
+  "version": "1.12.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build && node scripts/postbuild.mjs",
     "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test scripts/physics.test.mjs",
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/icons.mjs"
   },

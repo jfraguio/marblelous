@@ -7,12 +7,13 @@ export class AudioEngine {
   private ctx: Ctx | null = null;
   private master: GainNode | null = null;
   private bus: GainNode | null = null;
-  private comp: DynamicsCompressorNode | null = null;
   private noise: AudioBuffer | null = null;
+  private chimes = new Map<number, AudioBuffer>();
   private level: 0 | 1 | 2 = 2;
   private active = 0;
-  private lastUi = 0;
-  private lastChime = 0;
+  private voiceLimit = 14;
+  private lastUi = -Infinity;
+  private lastChime = -Infinity;
 
   get ready() {
     return !!this.ctx;
@@ -23,9 +24,9 @@ export class AudioEngine {
   }
 
   async unlock() {
+    if (this.level === 0) return;
     const ctx = this.ensure();
-    if (!ctx) return;
-    if (ctx.state === 'suspended') {
+    if (ctx && ctx.state !== 'running') {
       try {
         await ctx.resume();
       } catch {
@@ -35,13 +36,15 @@ export class AudioEngine {
   }
 
   private ensure(): Ctx | null {
-    if (this.ctx) {
-      if (this.ctx.state === 'suspended') void this.ctx.resume();
-      return this.ctx;
-    }
+    if (this.ctx) return this.ctx;
     const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AC) return null;
-    const ctx = new AC({ latencyHint: 'interactive' });
+    let ctx: Ctx;
+    try {
+      ctx = new AC();
+    } catch {
+      return null;
+    }
     this.ctx = ctx;
 
     const comp = ctx.createDynamicsCompressor();
@@ -52,7 +55,7 @@ export class AudioEngine {
     comp.release.value = 0.15;
 
     const master = ctx.createGain();
-    master.gain.value = this.level === 0 ? 0 : this.level === 1 ? 0.38 : 0.78;
+    master.gain.value = this.level === 0 ? 0 : this.level === 1 ? 0.28 : 0.65;
 
     const bus = ctx.createGain();
     bus.gain.value = 1;
@@ -61,10 +64,9 @@ export class AudioEngine {
     comp.connect(master);
     master.connect(ctx.destination);
 
-    this.comp = comp;
     this.master = master;
     this.bus = bus;
-    this.noise = this.makeNoise(ctx, 2);
+    this.noise = this.makeNoise(ctx, 0.5);
     // iOS unlock
     try {
       const b = ctx.createBuffer(1, 1, ctx.sampleRate);
@@ -81,9 +83,13 @@ export class AudioEngine {
   setLevel(level: 0 | 1 | 2) {
     this.level = level;
     if (this.ctx && this.master) {
-      const v = level === 0 ? 0 : level === 1 ? 0.38 : 0.78;
+      const v = level === 0 ? 0 : level === 1 ? 0.28 : 0.65;
       this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.03);
     }
+  }
+
+  setVoiceLimit(limit: number) {
+    this.voiceLimit = limit;
   }
 
   getLevel() {
@@ -93,7 +99,7 @@ export class AudioEngine {
   suspend() {
     if (!this.ctx) return;
     try {
-      void this.ctx.suspend();
+      void this.ctx.suspend().catch(() => {});
     } catch {
       /* noop */
     }
@@ -102,7 +108,7 @@ export class AudioEngine {
   resume() {
     if (!this.ctx) return;
     try {
-      void this.ctx.resume();
+      void this.ctx.resume().catch(() => {});
     } catch {
       /* noop */
     }
@@ -121,70 +127,79 @@ export class AudioEngine {
     return buf;
   }
 
-  private pan(value: number) {
-    const p = this.ctx!.createStereoPanner();
-    p.pan.value = clamp(value, -1, 1);
-    return p;
-  }
-
-  private beginVoice() {
-    if (!this.ctx) return false;
-    if (this.active >= 16) return false;
+  private connectVoice(source: AudioScheduledSourceNode, gain: GainNode, panX: number) {
+    const ctx = this.ctx!;
+    const pan = typeof ctx.createStereoPanner === 'function' && Math.abs(panX) > 0.04 ? ctx.createStereoPanner() : null;
+    if (pan) {
+      pan.pan.value = clamp(panX * 0.8, -1, 1);
+      gain.connect(pan);
+      pan.connect(this.bus!);
+    } else {
+      gain.connect(this.bus!);
+    }
     this.active++;
-    return true;
-  }
-
-  private endVoiceSoon(fundamental: OscillatorNode | AudioBufferSourceNode) {
-    fundamental.onended = () => {
-      this.active = Math.max(0, this.active - 1);
+    source.onended = () => {
+      this.active--;
+      gain.disconnect();
+      pan?.disconnect();
     };
   }
 
-  playChime(note: number, impact: number, panX: number) {
-    const ctx = this.ensure();
-    if (!ctx || !this.bus || this.level === 0) return;
-    const now = ctx.currentTime;
-    if (now - this.lastChime < 0.035) return;
-    if (this.active >= 16 && now - this.lastChime > 3) this.active = 0;
-    this.lastChime = now;
-    if (!this.beginVoice()) return;
+  private canPlay(priority = false): boolean {
+    return this.level > 0 && this.ctx?.state === 'running' && this.active < this.voiceLimit - (priority ? 0 : 2);
+  }
+
+  private chimeBuffer(ctx: Ctx, note: number): AudioBuffer {
+    const cached = this.chimes.get(note);
+    if (cached) return cached;
+    const rate = 22050;
+    const duration = 1.18 - note * 0.055;
+    const buffer = ctx.createBuffer(1, Math.round(rate * duration), rate);
+    const data = buffer.getChannelData(0);
     const base = noteFrequency(note);
-    const vel = clamp(impact / 900, 0.12, 1);
-    const panner = this.pan(panX);
-    panner.connect(this.bus);
-    const dur = 1.7 - note * 0.1;
-    const partials = [
-      { r: 1, a: 1, d: dur },
-      { r: 2.756, a: 0.34, d: dur * 0.62 },
-      { r: 5.404, a: 0.17, d: dur * 0.36 },
-      { r: 8.933, a: 0.075, d: dur * 0.22 }
-    ];
-    let fundamental: OscillatorNode | null = null;
-    for (const part of partials) {
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = note < 3 ? 'triangle' : 'sine';
-      osc.frequency.value = base * part.r;
-      osc.detune.value = (Math.random() - 0.5) * 5;
-      const amp = 0.16 * part.a * vel;
-      g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(Math.max(0.0002, amp), now + 0.006);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + part.d);
-      osc.connect(g);
-      g.connect(panner);
-      osc.start(now);
-      osc.stop(now + part.d + 0.03);
-      if (!fundamental) fundamental = osc;
+    // Cuatro modos de vibración de una lámina, calculados una sola vez por nota.
+    for (const [ratio, volume, decay] of [[1, 0.77, 5], [2.76, 0.26, 13], [5.4, 0.09, 23], [8.92, 0.035, 45]]) {
+      const angle = 2 * Math.PI * base * ratio / rate;
+      const wave = 2 * Math.cos(angle);
+      const falloff = Math.exp(-decay / rate);
+      let previous = 0;
+      let sample = Math.sin(angle);
+      let envelope = volume;
+      for (let i = 0; i < data.length; i++) {
+        data[i] += sample * envelope;
+        envelope *= falloff;
+        const next = wave * sample - previous;
+        previous = sample;
+        sample = next;
+      }
     }
-    // mallet transient
-    this.noiseBurst(0.018, 2400, 0.06 * vel, panX, 'highpass');
-    if (fundamental) this.endVoiceSoon(fundamental);
-    window.setTimeout(() => panner.disconnect(), 2400);
+    for (let i = 0; i < data.length; i++) {
+      data[i] *= Math.min(1, i / 135, (data.length - i - 1) / 1600);
+    }
+    this.chimes.set(note, buffer);
+    return buffer;
+  }
+
+  playChime(note: number, impact: number, panX: number, delay = 0) {
+    if (!this.canPlay(true)) return;
+    const ctx = this.ctx!;
+    const now = ctx.currentTime;
+    if (delay === 0) {
+      if (now - this.lastChime < 0.025) return;
+      this.lastChime = now;
+    }
+    const source = ctx.createBufferSource();
+    source.buffer = this.chimeBuffer(ctx, clamp(note, 0, 7));
+    const gain = ctx.createGain();
+    gain.gain.value = 0.18 * Math.sqrt(clamp(impact / 1000, 0.08, 1));
+    source.connect(gain);
+    this.connectVoice(source, gain, panX);
+    source.start(now + delay);
   }
 
   private noiseBurst(duration: number, freq: number, gain: number, panX: number, type: BiquadFilterType = 'bandpass') {
     const ctx = this.ctx;
-    if (!ctx || !this.noise || !this.bus || this.level === 0) return;
+    if (!ctx || !this.noise || !this.canPlay()) return;
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     const f = ctx.createBiquadFilter();
@@ -196,20 +211,11 @@ export class AudioEngine {
     g.gain.setValueAtTime(0.0001, now);
     g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), now + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    const p = this.pan(panX);
     src.connect(f);
     f.connect(g);
-    g.connect(p);
-    p.connect(this.bus);
+    this.connectVoice(src, g, panX);
     src.start(now);
     src.stop(now + duration + 0.03);
-    src.onended = () => {
-      try {
-        p.disconnect();
-      } catch {
-        /* noop */
-      }
-    };
   }
 
   private tone(
@@ -218,11 +224,12 @@ export class AudioEngine {
     gain: number,
     panX: number,
     type: OscillatorType = 'sine',
-    slideTo?: number
+    slideTo?: number,
+    delay = 0
   ) {
     const ctx = this.ctx;
-    if (!ctx || !this.bus || this.level === 0) return;
-    const now = ctx.currentTime;
+    if (!ctx || !this.canPlay()) return;
+    const now = ctx.currentTime + delay;
     const osc = ctx.createOscillator();
     const g = ctx.createGain();
     osc.type = type;
@@ -231,153 +238,95 @@ export class AudioEngine {
     g.gain.setValueAtTime(0.0001, now);
     g.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), now + 0.006);
     g.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-    const p = this.pan(panX);
     osc.connect(g);
-    g.connect(p);
-    p.connect(this.bus);
+    this.connectVoice(osc, g, panX);
     osc.start(now);
     osc.stop(now + duration + 0.04);
-    osc.onended = () => {
-      try {
-        p.disconnect();
-      } catch {
-        /* noop */
-      }
-    };
   }
 
   impact(material: string, impact: number, panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
-    const v = clamp(impact / 1200, 0.08, 1);
+    const v = clamp(impact / 850, 0.08, 1);
     if (material === 'rubber') {
       this.tone(170, 0.18, 0.1 * v, panX, 'sine', 300);
       return;
     }
-    if (material === 'metal') {
-      this.tone(1500 + Math.random() * 200, 0.09, 0.06 * v, panX, 'sine');
-      this.noiseBurst(0.03, 3200, 0.04 * v, panX, 'highpass');
+    if (material === 'metal' || material === 'conveyor') {
+      this.tone(710 + Math.random() * 100, 0.09, 0.054 * v, panX, 'sine', 488);
       return;
     }
-    this.tone(135 + Math.random() * 35, 0.07, 0.09 * v, panX, 'sine');
-    this.noiseBurst(0.028, 900, 0.035 * v, panX);
+    this.tone(320 + Math.random() * 28, 0.072, 0.085 * v, panX, 'sine', 180);
+    this.noiseBurst(0.024, 1150, 0.045 * v, panX);
   }
 
   bumper(panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
     this.tone(420, 0.09, 0.09, panX, 'triangle', 640);
     this.tone(840, 0.07, 0.04, panX, 'sine');
   }
 
   cannon(panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
     this.noiseBurst(0.16, 500, 0.09, panX);
     this.tone(80, 0.16, 0.11, panX, 'sine', 48);
   }
 
   boost(panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
     this.noiseBurst(0.22, 1400, 0.045, panX);
     this.tone(380, 0.18, 0.025, panX, 'sine', 720);
   }
 
   portal(panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
     this.noiseBurst(0.34, 1700, 0.05, panX, 'bandpass');
     this.tone(260, 0.3, 0.04, panX, 'sine', 880);
     this.tone(780, 0.26, 0.022, panX, 'triangle', 1400);
   }
 
   bubble(panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
     this.noiseBurst(0.1, 1400, 0.07, panX, 'bandpass');
     this.tone(260, 0.2, 0.08, panX, 'sine', 760);
     this.tone(620, 0.16, 0.035, panX, 'triangle', 980);
   }
 
-  clack(panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
-    this.noiseBurst(0.022, 2400, 0.045, panX, 'highpass');
-    this.tone(520, 0.06, 0.035, panX, 'triangle', 760);
+  clack(panX: number, seated = true) {
+    this.tone(seated ? 520 : 430, 0.065, seated ? 0.095 : 0.022, panX, 'triangle', 260);
+    if (seated) this.tone(660, 0.12, 0.033, panX, 'sine', undefined, 0.026);
+  }
+
+  air(panX: number) {
+    this.noiseBurst(0.26, 980, 0.032, panX);
+    this.tone(196, 0.29, 0.037, panX, 'sine', 466);
   }
 
   firework(panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
     this.noiseBurst(0.14, 1800, 0.08, panX);
     this.tone(180, 0.24, 0.05, panX, 'sine', 420);
     this.tone(880, 0.18, 0.03, panX, 'sine', 1600);
   }
 
   pop(panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
     this.noiseBurst(0.045, 2600, 0.08, panX, 'highpass');
     this.tone(760, 0.12, 0.05, panX, 'sine', 1500);
   }
 
   goal(panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
-    const notes = [5, 7, 5, 4];
-    notes.forEach((n, i) => {
-      window.setTimeout(() => {
-        if (this.level > 0) this.playChime(n, 760, panX);
-      }, i * 55);
-    });
-    this.tone(261.6, 0.4, 0.035, panX, 'sine');
+    this.playChime(2, 290, panX);
+    this.playChime(5, 420, panX, 0.076);
   }
 
   star(panX: number) {
-    if (this.level === 0) return;
-    this.ensure();
     this.tone(1046, 0.16, 0.055, panX, 'sine');
     this.tone(1568, 0.13, 0.03, panX, 'sine');
   }
 
-  purchase() {
-    if (this.level === 0) return;
-    this.ensure();
-    this.tone(523, 0.1, 0.07, 0, 'sine');
-    window.setTimeout(() => this.tone(783, 0.18, 0.06, 0, 'sine'), 70);
-  }
-
-  medal() {
-    if (this.level === 0) return;
-    this.ensure();
-    [523, 659, 783, 1046].forEach((f, i) => {
-      window.setTimeout(() => this.tone(f, 0.32, 0.045, 0, 'sine'), i * 70);
-    });
-  }
-
   ui() {
-    const ctx = this.ensure();
-    if (!ctx || this.level === 0) return;
-    const now = ctx.currentTime;
+    if (!this.canPlay()) return;
+    const now = this.ctx!.currentTime;
     if (now - this.lastUi < 0.035) return;
     this.lastUi = now;
     this.noiseBurst(0.014, 1600, 0.027, 0, 'bandpass');
   }
 
   error() {
-    if (this.level === 0) return;
-    this.ensure();
     this.tone(180, 0.12, 0.04, 0, 'triangle', 140);
-    window.setTimeout(() => this.tone(130, 0.16, 0.035, 0, 'triangle', 100), 80);
-  }
-
-  record() {
-    if (this.level === 0) return;
-    this.ensure();
-    [392, 523, 659, 783].forEach((f, i) => {
-      window.setTimeout(() => this.tone(f, 0.55, 0.04, 0, 'sine'), i * 60);
-    });
+    this.tone(130, 0.16, 0.035, 0, 'triangle', 100, 0.08);
   }
 
   dispose() {

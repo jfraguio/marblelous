@@ -35,15 +35,12 @@ type Single =
       type: 'place';
       pointerId: number;
       defId: string;
-      start: Screen;
-      world: Screen;
     }
   | null;
 
 interface Pinch {
   startDist: number;
   startZoom: number;
-  startMid: Screen;
   worldAtMid: Screen;
 }
 
@@ -54,7 +51,6 @@ export class Input {
   private pointers = new Map<number, Screen>();
   private single: Single = null;
   private pinch: Pinch | null = null;
-  private lastTouchAt = 0;
 
   constructor(canvas: HTMLCanvasElement, game: Game, ui: UI) {
     this.canvas = canvas;
@@ -70,7 +66,10 @@ export class Input {
     c.addEventListener('pointermove', this.onMove, { passive: false });
     c.addEventListener('pointerup', this.onUp, { passive: false });
     c.addEventListener('pointercancel', this.onCancel, { passive: false });
-    c.addEventListener('lostpointercapture', (e) => this.onCancel(e as PointerEvent));
+    c.addEventListener('lostpointercapture', this.onCancel);
+    c.addEventListener('pointerleave', () => {
+      if (!this.single) this.game.clearPreview();
+    });
     c.addEventListener(
       'wheel',
       (e) => {
@@ -79,7 +78,6 @@ export class Input {
         const factor = Math.exp(-e.deltaY * 0.0014);
         this.game.zoomAtScreen(e.clientX, e.clientY, this.game.camera.zoom * factor);
         this.game.saveCamera();
-        this.lastTouchAt = performance.now();
       },
       { passive: false }
     );
@@ -90,11 +88,9 @@ export class Input {
   }
 
   private onDown = (e: PointerEvent) => {
-    if (this.game.overlayOpen) return;
+    if (this.game.overlayOpen || e.button !== 0) return;
     if (this.pointers.size >= 2) return;
     e.preventDefault();
-    this.unlockAudio();
-    this.lastTouchAt = performance.now();
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
       this.canvas.setPointerCapture(e.pointerId);
@@ -114,17 +110,9 @@ export class Input {
       this.single = {
         type: 'place',
         pointerId: e.pointerId,
-        defId: this.game.armedDefId,
-        start: { x: e.clientX, y: e.clientY },
-        world
+        defId: this.game.armedDefId
       };
-      this.game.ghost = {
-        kind: 'piece',
-        defId: this.game.armedDefId,
-        x: Math.round(world.x / 20) * 20,
-        y: Math.round(world.y / 20) * 20,
-        rot: 0
-      };
+      this.game.previewPiece(this.game.armedDefId, world.x, world.y);
       return;
     }
     if (this.game.mode === 'play') {
@@ -136,11 +124,13 @@ export class Input {
       const rainTimer = window.setTimeout(() => {
         if (!this.single || this.single.type !== 'drop' || this.single.moved) return;
         this.single.raining = true;
-        this.single.rainInterval = window.setInterval(() => {
-          if (!this.single || this.single.type !== 'drop') return;
+        const rain = () => {
+          if (!this.single || this.single.type !== 'drop' || this.game.isPaused) return;
           const w = this.single.world;
           this.game.spawnMarble(w.x, w.y, this.game.selectedMarble);
-        }, 120);
+        };
+        rain();
+        this.single.rainInterval = window.setInterval(rain, 135);
       }, 350);
       this.single = {
         type: 'drop',
@@ -187,7 +177,19 @@ export class Input {
       return;
     }
     const s = this.single;
-    if (!s || s.pointerId !== e.pointerId) return;
+    if (!s) {
+      if (e.pointerType === 'mouse' && !this.game.overlayOpen && this.game.armedDefId) {
+        const w = this.game.screenToWorld(e.clientX, e.clientY);
+        this.game.previewPiece(this.game.armedDefId, w.x, w.y);
+      }
+      return;
+    }
+    if (s.pointerId !== e.pointerId) return;
+    if (s.type === 'place') {
+      const w = this.game.screenToWorld(e.clientX, e.clientY);
+      this.game.previewPiece(s.defId, w.x, w.y);
+      return;
+    }
     const dx = e.clientX - s.start.x;
     const dy = e.clientY - s.start.y;
     if (s.type === 'drop') {
@@ -204,6 +206,8 @@ export class Input {
           camX: this.game.camera.x,
           camY: this.game.camera.y
         };
+        this.game.panByScreen(dx, dy);
+        this.game.saveCamera();
         return;
       }
       if (!s.moved) {
@@ -218,34 +222,19 @@ export class Input {
         if (p) this.game.beginMove(p);
       }
       if (s.moved) {
-        const w = this.game.screenToWorld(e.clientX, e.clientY);
         const p = this.game.pieces.find((x) => x.id === s.pieceId);
-        if (p) this.game.movePieceTo(p, w.x, w.y - 18 / this.game.camera.zoom);
+        const zoom = this.game.camera.zoom;
+        if (p) this.game.movePieceTo(p, s.fromX + dx / zoom, s.fromY + dy / (zoom * CAMERA_TILT));
       }
-    } else if (s.type === 'place') {
-      const w = this.game.screenToWorld(e.clientX, e.clientY);
-      s.world = w;
-      this.game.ghost = {
-        kind: 'piece',
-        defId: s.defId,
-        x: Math.round(w.x / 20) * 20,
-        y: Math.round(w.y / 20) * 20,
-        rot: 0
-      };
     } else if (s.type === 'pan') {
       this.game.camera.x = s.camX - dx / this.game.camera.zoom;
-      this.game.camera.y = s.camY - dy / this.game.camera.zoom;
+      this.game.camera.y = s.camY - dy / (this.game.camera.zoom * CAMERA_TILT);
       this.game.saveCamera();
     }
   };
 
   private onUp = (e: PointerEvent) => {
     this.pointers.delete(e.pointerId);
-    try {
-      this.canvas.releasePointerCapture(e.pointerId);
-    } catch {
-      /* noop */
-    }
     if (this.pinch) {
       if (this.pointers.size < 2) this.pinch = null;
       this.single = null;
@@ -257,44 +246,35 @@ export class Input {
       if (s.type === 'drop') {
         clearTimeout(s.rainTimer);
         clearInterval(s.rainInterval);
-        if (!s.moved && !s.raining) {
+        if (!s.moved && !s.raining && !this.game.isPaused && document.elementFromPoint(e.clientX, e.clientY) === this.canvas) {
           this.game.spawnMarble(s.world.x, s.world.y, this.game.selectedMarble);
         }
         this.game.dropPreview = null;
       } else if (s.type === 'piece') {
         const p = this.game.pieces.find((x) => x.id === s.pieceId);
-        if (p && s.moved) this.game.endMove(p, s.fromX, s.fromY);
+        if (p && s.moved) {
+          if (this.game.overlayOpen || document.elementFromPoint(e.clientX, e.clientY) !== this.canvas) {
+            this.game.cancelMove(p, s.fromX, s.fromY);
+          } else {
+            this.game.endMove(p, s.fromX, s.fromY);
+          }
+        }
       } else if (s.type === 'place') {
-        if (e.clientY < window.innerHeight - 96) {
-          const w = s.world;
-          const piece = this.game.addPiece(s.defId, Math.round(w.x / 20) * 20, Math.round(w.y / 20) * 20, 0);
+        if (this.game.armedDefId === s.defId && !this.game.overlayOpen && document.elementFromPoint(e.clientX, e.clientY) === this.canvas) {
+          const w = this.game.screenToWorld(e.clientX, e.clientY);
+          this.game.previewPiece(s.defId, w.x, w.y);
+          const piece = this.game.placePreview();
           if (piece && !this.game.armedSticky) this.game.disarmPiece();
         }
-        this.game.ghost = null;
+        this.game.clearPreview();
       }
       this.single = null;
     }
   };
 
   private onCancel = (e: PointerEvent) => {
-    if (this.single && this.single.pointerId === e.pointerId) {
-      if (this.single.type === 'drop') {
-        clearTimeout(this.single.rainTimer);
-        clearInterval(this.single.rainInterval);
-      }
-      if (this.single.type === 'piece') {
-        const s = this.single;
-        const p = this.game.pieces.find((x) => x.id === s.pieceId);
-        if (p && s.moved) {
-          p.x = s.fromX;
-          p.y = s.fromY;
-          this.game.physics.rebuild(this.game.pieces);
-        }
-      }
-      if (this.single.type === 'place') this.game.ghost = null;
-      this.single = null;
-    }
-    this.pointers.delete(e.pointerId);
+    if (!this.pointers.delete(e.pointerId)) return;
+    if (this.single?.pointerId === e.pointerId) this.cancelSingle();
     this.pinch = null;
     this.game.dropPreview = null;
   };
@@ -306,14 +286,9 @@ export class Input {
     } else if (this.single?.type === 'piece') {
       const s = this.single;
       const p = this.game.pieces.find((x) => x.id === s.pieceId);
-      if (p && s.moved) {
-        p.x = s.fromX;
-        p.y = s.fromY;
-        this.game.physics.rebuild(this.game.pieces);
-      }
-    } else if (this.single?.type === 'place') {
-      this.game.ghost = null;
+      if (p && s.moved) this.game.cancelMove(p, s.fromX, s.fromY);
     }
+    this.game.clearPreview();
     this.single = null;
     this.game.dropPreview = null;
   }
@@ -326,10 +301,9 @@ export class Input {
     this.pinch = {
       startDist: Math.max(1, d),
       startZoom: this.game.camera.zoom,
-      startMid: mid,
       worldAtMid: this.game.screenToWorld(mid.x, mid.y)
     };
-    this.game.ghost = null;
+    this.game.clearPreview();
     this.game.dropPreview = null;
   }
 
@@ -354,6 +328,7 @@ export class Input {
       }
       const k = e.key;
       if (k === 'Escape') {
+        this.cancelSingle();
         if (this.game.armedDefId) this.game.disarmPiece();
         else this.game.deselect();
         return;
@@ -378,9 +353,12 @@ export class Input {
       else if (k === 'ArrowDown') this.game.camera.y += step;
       else if (k === '+' || k === '=') this.game.zoomAtScreen(this.game.viewW / 2, this.game.viewH / 2, this.game.camera.zoom * 1.18);
       else if (k === '-') this.game.zoomAtScreen(this.game.viewW / 2, this.game.viewH / 2, this.game.camera.zoom / 1.18);
+      else if (k.toLowerCase() === 'p' && !e.repeat && !e.metaKey && !e.ctrlKey) this.game.toggleSimulation();
       else if (k === ' ') {
+        if ((e.target as HTMLElement | null)?.tagName === 'BUTTON') return;
         e.preventDefault();
         if (this.game.mode === 'play') {
+          this.unlockAudio();
           const w = this.game.screenToWorld(this.game.viewW / 2, this.game.viewH / 2);
           this.game.spawnMarble(w.x, w.y, this.game.selectedMarble);
         }
@@ -390,6 +368,7 @@ export class Input {
           this.ui.refreshAll();
         }
       }
+      if (k.startsWith('Arrow') || k === '+' || k === '=' || k === '-') this.game.saveCamera();
     });
   }
 }

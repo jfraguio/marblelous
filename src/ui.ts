@@ -2,16 +2,16 @@ import type { Game } from './game';
 import {
   FUNNEL_WIDTHS,
   MARBLE_BY_ID,
-  SHOP_ITEMS,
+  MARBLE_TYPES,
+  PIECE_TRAY,
   defaultLen,
-  getPieceDef,
   pieceHitSize,
   pieceLength
 } from './pieces';
 import { drawPreview } from './art';
 import { WORLD_THEMES } from './worlds';
 import { STRUCTURES } from './structures';
-import { clamp, icon, prefersReducedMotion, shortAngle } from './util';
+import { CAMERA_TILT, clamp, icon, prefersReducedMotion, shortAngle } from './util';
 
 const $ = <T extends Element = HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const $$ = (sel: string) => Array.from(document.querySelectorAll(sel)) as HTMLElement[];
@@ -29,6 +29,11 @@ export class UI {
   selDelete = $('#sel-delete');
   capacity = $('#capacity');
   capacityNum = $('#capacity-num');
+  private undo = $<HTMLButtonElement>('#btn-undo');
+  private redo = $<HTMLButtonElement>('#btn-redo');
+  private pause = $<HTMLButtonElement>('#btn-pause');
+  private sweep = $<HTMLButtonElement>('#btn-sweep');
+  private pauseIcon = $<SVGUseElement>('#btn-pause use');
   settings = $('#settings');
   settingsBody = $('#settings-body');
   toastEl = $('#toast');
@@ -43,11 +48,19 @@ export class UI {
   private lastSelLeft = -1;
   private lastSelTop = -1;
   private lastCapacity = -1;
+  private lastPaused = false;
+  private trayMode: 'build' | 'play' | null = null;
+  private trayCards = { build: [] as HTMLButtonElement[], play: [] as HTMLButtonElement[] };
+  private trayScroll = { build: 0, play: 0 };
+  private selectionKey = '';
   private rotating: {
     pieceId: number;
     center: { x: number; y: number };
     startRot: number;
     startAng: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
     pointerId: number;
   } | null = null;
 
@@ -69,6 +82,10 @@ export class UI {
     $('#btn-zoom-in').addEventListener('click', () => this.zoomStep(1.25));
     $('#btn-zoom-out').addEventListener('click', () => this.zoomStep(0.8));
     $('#btn-settings').addEventListener('click', () => this.openOverlay('settings'));
+    this.undo.addEventListener('click', () => this.game.undo());
+    this.redo.addEventListener('click', () => this.game.redo());
+    this.pause.addEventListener('click', () => this.game.toggleSimulation());
+    this.sweep.addEventListener('click', () => this.game.clearMarbles());
 
     $$('.close').forEach((btn) => {
       btn.addEventListener('click', () => this.closeOverlays());
@@ -154,8 +171,6 @@ export class UI {
         if (!this.longPressId) return;
         this.longPressFired = true;
         this.game.armPiece(this.longPressId, true);
-        this.game.audio.ui();
-        this.refreshTray();
       }, 380);
     });
     this.tray.addEventListener('pointermove', (e) => {
@@ -180,12 +195,11 @@ export class UI {
       if (kind === 'piece') {
         const id = card.dataset.id ?? '';
         this.game.armPiece(id);
-        this.refreshTray();
         return;
       }
       if (kind === 'marble') {
         const id = card.dataset.id ?? 'crystal';
-        if (this.game.owned.has(id)) {
+        if (MARBLE_BY_ID.has(id)) {
           this.game.selectedMarble = id;
           this.game.audio.ui();
           this.refreshTray();
@@ -216,6 +230,15 @@ export class UI {
   }
 
   refreshHud() {
+    this.undo.disabled = !this.game.canUndo;
+    this.redo.disabled = !this.game.canRedo;
+    const paused = this.game.simulationPaused;
+    if (paused !== this.lastPaused) {
+      this.lastPaused = paused;
+      this.pause.setAttribute('aria-pressed', String(paused));
+      this.pause.title = paused ? 'Reanudar simulación (P)' : 'Pausar simulación (P)';
+      this.pauseIcon.setAttribute('href', paused ? '#i-play' : '#i-pause');
+    }
     const cap = this.game.pieces.length;
     if (cap !== this.lastCapacity) {
       this.lastCapacity = cap;
@@ -225,48 +248,55 @@ export class UI {
   }
 
   refreshMode() {
-    $('#mode-build').classList.toggle('is-active', this.game.mode === 'build');
-    $('#mode-play').classList.toggle('is-active', this.game.mode === 'play');
+    for (const mode of ['build', 'play'] as const) {
+      const button = $(`#mode-${mode}`);
+      const active = this.game.mode === mode;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', String(active));
+    }
   }
 
   refreshTray() {
-    const scroll = this.tray.scrollLeft;
-    this.tray.innerHTML = '';
-    const inPlay = this.game.mode === 'play';
-    if (inPlay) {
-      for (const type of [...MARBLE_BY_ID.values()]) {
-        if (!this.game.owned.has(type.id)) continue;
-        const card = document.createElement('button');
-        card.className = `card marble-card${this.game.selectedMarble === type.id ? ' is-active' : ''}`;
-        card.dataset.id = type.id;
-        card.dataset.kind = 'marble';
-        card.title = type.label;
-        card.setAttribute('aria-label', type.label);
-        const canvas = document.createElement('canvas');
-        card.appendChild(canvas);
-        this.tray.appendChild(card);
-        drawPreview(canvas, type.id, 'marble');
+    const mode = this.game.mode;
+    const inPlay = mode === 'play';
+    const cards = this.trayCards[mode];
+    if (this.trayMode !== mode) {
+      if (this.trayMode) this.trayScroll[this.trayMode] = this.tray.scrollLeft;
+      const fresh = cards.length === 0;
+      if (fresh) {
+        const items = inPlay ? MARBLE_TYPES : PIECE_TRAY;
+        for (const item of items) {
+          const card = document.createElement('button');
+          card.className = inPlay ? 'card marble-card' : 'card';
+          card.dataset.id = item.id;
+          card.dataset.kind = inPlay ? 'marble' : 'piece';
+          card.title = item.label;
+          card.setAttribute('aria-label', item.label);
+          card.appendChild(document.createElement('canvas'));
+          cards.push(card);
+        }
       }
-    } else {
-      const items = SHOP_ITEMS.filter((it) => it.kind === 'piece' && this.game.owned.has(it.id));
-      for (const item of items) {
-        const card = document.createElement('button');
-        card.className = `card${this.game.armedDefId === item.id ? ' is-active' : ''}`;
-        card.dataset.id = item.id;
-        card.dataset.kind = 'piece';
-        const name = getPieceDef(item.id).label;
-        card.title = name;
-        card.setAttribute('aria-label', name);
-        const canvas = document.createElement('canvas');
-        card.appendChild(canvas);
-        this.tray.appendChild(card);
-        drawPreview(canvas, item.id, 'piece');
+      this.tray.textContent = '';
+      this.tray.append(...cards);
+      if (fresh) {
+        for (const card of cards) drawPreview(card.querySelector('canvas')!, card.dataset.id!, inPlay ? 'marble' : 'piece');
       }
+      this.tray.setAttribute('aria-label', inPlay ? 'Bandeja de canicas' : 'Bandeja de piezas');
+      this.tray.scrollLeft = this.trayScroll[mode];
+      this.trayMode = mode;
     }
-    this.tray.scrollLeft = scroll;
+    const selected = inPlay ? this.game.selectedMarble : this.game.armedDefId;
+    for (const card of cards) {
+      const active = card.dataset.id === selected;
+      card.classList.toggle('is-active', active);
+      card.classList.toggle('is-sticky', !inPlay && active && this.game.armedSticky);
+      card.setAttribute('aria-pressed', String(active));
+    }
   }
 
   tick(_now: number) {
+    const empty = this.game.marbles.length === 0;
+    if (empty !== this.sweep.disabled) this.sweep.disabled = empty;
     this.updateSelection();
   }
 
@@ -277,12 +307,14 @@ export class UI {
       return;
     }
     const hs = pieceHitSize(p);
-    const top = this.game.worldToScreen(p.x, p.y - hs.h * 0.5 - 34 / this.game.camera.zoom);
-    if (top.x < -80 || top.x > this.game.viewW + 80 || top.y < -80 || top.y > this.game.viewH + 80) {
+    const height = (Math.abs(Math.sin(p.rot)) * hs.w + Math.abs(Math.cos(p.rot)) * hs.h) / 2;
+    const center = this.game.worldToScreen(p.x, p.y);
+    const top = this.game.worldToScreen(p.x, p.y - height - 34 / this.game.camera.zoom);
+    if (top.x < -80 || top.x > this.game.viewW + 80 || center.y + (center.y - top.y) < -40 || top.y > this.game.viewH + 50) {
       if (!this.selection.classList.contains('is-hidden')) this.selection.classList.add('is-hidden');
       return;
     }
-    this.selection.classList.remove('is-hidden');
+    if (this.selection.classList.contains('is-hidden')) this.selection.classList.remove('is-hidden');
     const canRotate = p.defId !== 'balance' && p.defId !== 'electromagnet';
     const canSize =
       p.defId === 'ramp' ||
@@ -293,26 +325,26 @@ export class UI {
     const canMagnet = p.defId === 'electromagnet';
     const canFactory = p.defId === 'marbleFactory';
     const canPower = canMagnet || canFactory;
-    this.selRotate.classList.toggle('is-hidden', !canRotate);
-    this.selSize.classList.toggle('is-hidden', !canSize);
-    const sizeLabel = p.defId === 'funnel' ? 'Ensanchar embudo' : 'Cambiar longitud';
-    this.selSize.setAttribute('aria-label', sizeLabel);
-    this.selSize.title = sizeLabel;
-    this.selPower.classList.toggle('is-hidden', !canPower);
-    this.selPowerUse?.setAttribute('href', canFactory ? '#i-power' : '#i-magnet');
     const repel = canMagnet && (p.polarity ?? 1) < 0;
     const factoryOff = canFactory && p.powered === false;
-    this.selPower.classList.toggle('repel', repel);
-    this.selPower.classList.toggle('off', factoryOff);
-    const powerLabel = canFactory
-      ? factoryOff
-        ? 'Encender fábrica'
-        : 'Apagar fábrica'
-      : repel
-        ? 'Atraer canicas'
-        : 'Repeler canicas';
-    this.selPower.setAttribute('aria-label', powerLabel);
-    this.selPower.title = powerLabel;
+    const key = `${p.defId}:${repel}:${factoryOff}`;
+    if (key !== this.selectionKey) {
+      this.selectionKey = key;
+      this.selRotate.classList.toggle('is-hidden', !canRotate);
+      this.selSize.classList.toggle('is-hidden', !canSize);
+      const sizeLabel = p.defId === 'funnel' ? 'Ensanchar embudo' : 'Cambiar longitud';
+      this.selSize.setAttribute('aria-label', sizeLabel);
+      this.selSize.title = sizeLabel;
+      this.selPower.classList.toggle('is-hidden', !canPower);
+      this.selPowerUse?.setAttribute('href', canFactory ? '#i-power' : '#i-magnet');
+      this.selPower.classList.toggle('repel', repel);
+      this.selPower.classList.toggle('off', factoryOff);
+      const powerLabel = canFactory
+        ? factoryOff ? 'Encender fábrica' : 'Apagar fábrica'
+        : repel ? 'Atraer canicas' : 'Repeler canicas';
+      this.selPower.setAttribute('aria-label', powerLabel);
+      this.selPower.title = powerLabel;
+    }
     const count = 3 + (canSize ? 1 : 0) + (canPower ? 1 : 0) - (canRotate ? 0 : 1);
     const width = count * 52 + (count - 1) * 8;
     const left = clamp(top.x - width / 2, 8, this.game.viewW - width - 8);
@@ -328,18 +360,23 @@ export class UI {
   }
 
   private bindRotate() {
+    const angleAt = (e: PointerEvent, center: { x: number; y: number }) =>
+      Math.atan2((e.clientY - center.y) / CAMERA_TILT, e.clientX - center.x);
     const start = (e: PointerEvent) => {
       const p = this.game.selectedPiece;
       if (!p) return;
       e.preventDefault();
       e.stopPropagation();
       const center = this.game.worldToScreen(p.x, p.y);
-      const ang = Math.atan2(e.clientY - center.y, e.clientX - center.x);
+      const ang = angleAt(e, center);
       this.rotating = {
         pieceId: p.id,
         center,
         startRot: p.rot,
         startAng: ang,
+        startX: e.clientX,
+        startY: e.clientY,
+        moved: false,
         pointerId: e.pointerId
       };
       this.selRotate.setPointerCapture(e.pointerId);
@@ -349,7 +386,9 @@ export class UI {
       if (!this.rotating || this.rotating.pointerId !== e.pointerId) return;
       const p = this.game.pieces.find((x) => x.id === this.rotating!.pieceId);
       if (!p) return;
-      const ang = Math.atan2(e.clientY - this.rotating.center.y, e.clientX - this.rotating.center.x);
+      if (Math.hypot(e.clientX - this.rotating.startX, e.clientY - this.rotating.startY) > 5) this.rotating.moved = true;
+      if (!this.rotating.moved) return;
+      const ang = angleAt(e, this.rotating.center);
       let rot = this.rotating.startRot + shortAngle(ang - this.rotating.startAng);
       rot = Math.round(rot / (Math.PI / 12)) * (Math.PI / 12);
       this.game.setPieceRot(p, rot, false);
@@ -359,17 +398,28 @@ export class UI {
       if (!this.rotating || this.rotating.pointerId !== e.pointerId) return;
       const p = this.game.pieces.find((x) => x.id === this.rotating!.pieceId);
       if (p) {
-        let rot = this.rotating.startRot + shortAngle(Math.atan2(e.clientY - this.rotating.center.y, e.clientX - this.rotating.center.x) - this.rotating.startAng);
-        rot = Math.round(rot / (Math.PI / 12)) * (Math.PI / 12);
-        this.game.setPieceRot(p, rot, true, this.rotating.startRot);
-        this.game.requestSave();
+        const { startRot, startAng, center, moved } = this.rotating;
+        const delta = moved ? shortAngle(angleAt(e, center) - startAng) : Math.PI / 12;
+        const rot = Math.round((startRot + delta) / (Math.PI / 12)) * (Math.PI / 12);
+        this.game.setPieceRot(p, rot, true, startRot);
       }
       this.rotating = null;
     };
     this.selRotate.addEventListener('pointerdown', start);
     this.selRotate.addEventListener('pointermove', move);
     this.selRotate.addEventListener('pointerup', end);
-    this.selRotate.addEventListener('pointercancel', end);
+    const cancel = (e: PointerEvent) => {
+      if (this.rotating?.pointerId !== e.pointerId) return;
+      const p = this.game.pieces.find((piece) => piece.id === this.rotating!.pieceId);
+      if (p) this.game.setPieceRot(p, this.rotating.startRot);
+      this.rotating = null;
+    };
+    this.selRotate.addEventListener('pointercancel', cancel);
+    this.selRotate.addEventListener('lostpointercapture', cancel);
+    this.selRotate.addEventListener('click', (e) => {
+      const p = this.game.selectedPiece;
+      if (p && e.detail === 0) this.game.setPieceRot(p, p.rot + Math.PI / 12, true, p.rot);
+    });
   }
 
   openOverlay(id: OverlayId) {
@@ -420,8 +470,9 @@ export class UI {
     const s = this.game.settings;
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const rows: string[] = [];
-    const q = s.quality === 'high' ? 3 : s.quality === 'low' ? 1 : 2;
-    rows.push(this.buildRow('quality', 'Calidad', this.dots(q, 3, 'warn'), 'quality'));
+    const quality = s.quality === 'high' ? 'Alta' : s.quality === 'low' ? 'Ligera' : 'Automática';
+    rows.push(this.buildRow('quality', 'Calidad', quality, 'quality'));
+    rows.push(this.buildRow('sound', 'Sonido', ['Silencio', 'Suave', 'Normal'][s.sound], 'sound'));
     rows.push(this.buildRow('haptics', 'Vibración', this.dots(s.haptics && !ios ? 1 : 0, 1), 'haptics'));
     const worldDots = this.game.worlds
       .map((_, i) => {
@@ -470,13 +521,14 @@ export class UI {
       <div class="set-value structure-slots">${structureSlots}</div>
     </div>`);
     rows.push(this.buildRow('trash', 'Borrar', '', 'clear', 'reset-row'));
-    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.11 · sin datos · sin red</span></div>`);
+    rows.push(`<div class="set-row" style="justify-content:center;border:0;background:transparent;min-height:40px;padding:2px"><span class="tiny">Marblelous v1.12 · sin datos · sin red</span></div>`);
     this.settingsBody.innerHTML = rows.join('');
 
     this.settingsBody.querySelectorAll<HTMLElement>('.set-row.tap').forEach((row) => {
       const action = row.dataset.action ?? '';
       row.addEventListener('click', () => {
         if (action === 'quality') this.game.cycleQuality();
+        else if (action === 'sound') this.game.cycleSound();
         else if (action === 'haptics') this.game.toggleHaptics();
         else if (action === 'resume') {
           if (this.game.resumeLastSession()) {

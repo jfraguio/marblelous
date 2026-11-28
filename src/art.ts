@@ -1,6 +1,8 @@
 import type { MarbleType, Piece } from './types';
 import {
   COLORS,
+  FAN_HALF,
+  FAN_OUTLET,
   FACTORY_LAMP,
   MARBLE_TYPES,
   NOTE_COLORS,
@@ -8,6 +10,7 @@ import {
   RAMP_CURVE_END,
   RAMP_CURVE_RADIUS,
   RAMP_CURVE_START,
+  S_TRACK,
   funnelLayout,
   pieceLength,
   spiralDepth,
@@ -33,6 +36,8 @@ const marbleCache = new Map<string, Sprite>();
 const shadowCache = new Map<string, Sprite>();
 let cacheBudget = 140;
 let spriteScale = SPRITE_SCALE;
+let piecePixels = 0;
+let shadowPixels = 0;
 
 /** Ajusta la resolución con la que se hornean las piezas (LOD por zoom × DPR). */
 export function setSpriteScale(scale: number) {
@@ -236,29 +241,23 @@ function makeSprite(
   return { canvas, w, h };
 }
 
-export function clearSpriteCache() {
-  cache.clear();
-  marbleCache.clear();
-  shadowCache.clear();
-}
-
 export function setSpriteBudget(n: number) {
   cacheBudget = Math.max(40, n);
+  trimCache();
 }
 
 function trimCache() {
   // El presupuesto cuenta piezas, pero la memoria crece con la escala al
   // cuadrado: al subir el LOD se guardan menos variantes para no disparar los MB.
-  const pixelBudget = Math.round(cacheBudget * (SPRITE_SCALE / spriteScale) ** 2);
-  const budget = Math.max(24, Math.min(cacheBudget, pixelBudget));
-  while (cache.size > budget) {
-    const key = cache.keys().next().value as string | undefined;
-    if (key === undefined) break;
+  const maxPixels = cacheBudget * 82_000;
+  while (cache.size > cacheBudget || piecePixels > maxPixels) {
+    const [key, sprite] = cache.entries().next().value!;
+    piecePixels -= sprite.canvas.width * sprite.canvas.height;
     cache.delete(key);
   }
-  while (shadowCache.size > budget) {
-    const key = shadowCache.keys().next().value as string | undefined;
-    if (key === undefined) break;
+  while (shadowCache.size > cacheBudget || shadowPixels > maxPixels * 0.19) {
+    const [key, sprite] = shadowCache.entries().next().value!;
+    shadowPixels -= sprite.canvas.width * sprite.canvas.height;
     shadowCache.delete(key);
   }
 }
@@ -331,8 +330,8 @@ function spriteDims(p: Piece): { w: number; h: number } {
   }
 }
 
-export function getPieceSprite(p: Piece, scale = spriteScale): Sprite {
-  const key = `${p.defId}|${p.color}|${p.len}|${p.variant}|${scale}`;
+export function getPieceSprite(p: Piece, scale = spriteScale, front = false): Sprite {
+  const key = `${p.defId}|${p.color}|${p.len}|${p.variant}|${scale}|${front}`;
   const hit = cache.get(key);
   if (hit) {
     // LRU: lo usado recientemente se queda al final de la cola.
@@ -341,15 +340,93 @@ export function getPieceSprite(p: Piece, scale = spriteScale): Sprite {
     return hit;
   }
   const dims = spriteDims(p);
-  const s = buildPieceSprite(p, dims.w, dims.h, scale);
+  const safeScale = Math.min(scale, 2048 / (Math.max(dims.w, dims.h) + PAD * 2));
+  const s = front
+    ? makeSprite(dims.w, dims.h, (ctx) => paintPieceFront(ctx, p), safeScale)
+    : buildPieceSprite(p, dims.w, dims.h, safeScale);
   cache.set(key, s);
+  piecePixels += s.canvas.width * s.canvas.height;
   trimCache();
   return s;
 }
 
-export function drawPiece(ctx: CanvasRenderingContext2D, p: Piece) {
+export function drawPiece(ctx: CanvasRenderingContext2D, p: Piece, withFront = true) {
   const s = getPieceSprite(p);
   ctx.drawImage(s.canvas, -s.w / 2, -s.h / 2, s.w, s.h);
+  if (withFront && (p.defId === 'funnel' || p.defId === 'fan')) drawPieceFront(ctx, p);
+}
+
+export function drawPieceFront(ctx: CanvasRenderingContext2D, p: Piece) {
+  const s = getPieceSprite(p, spriteScale, true);
+  ctx.drawImage(s.canvas, -s.w / 2, -s.h / 2, s.w, s.h);
+}
+
+function paintPieceFront(ctx: CanvasRenderingContext2D, p: Piece) {
+  if (p.defId === 'funnel') {
+    const { left, right } = funnelLayout(p);
+    const half = -left[0].x;
+    const top = left[0].y;
+    const color = colorFor(p);
+    const glass = ctx.createLinearGradient(-half, top, half, 74);
+    glass.addColorStop(0, rgba(color, 0.62));
+    glass.addColorStop(0.27, rgba(color, 0.32));
+    glass.addColorStop(0.53, 'rgba(255,255,255,0.12)');
+    glass.addColorStop(0.82, rgba(color, 0.40));
+    glass.addColorStop(1, rgba(color, 0.64));
+    ctx.beginPath();
+    ctx.ellipse(0, top, half, 13, 0, 0, Math.PI);
+    for (let i = 1; i < left.length; i++) ctx.lineTo(left[i].x, left[i].y);
+    ctx.quadraticCurveTo(0, 101, right[right.length - 1].x, right[right.length - 1].y);
+    for (let i = right.length - 2; i >= 0; i--) ctx.lineTo(right[i].x, right[i].y);
+    ctx.closePath();
+    ctx.fillStyle = glass;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(0, top, half, 13, 0, 0, Math.PI);
+    ink(ctx, 5);
+    ctx.stroke();
+    ctx.strokeStyle = mix(color, '#FFFFFF', 0.68);
+    ctx.lineWidth = 2.8;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(0, 84, 40, 8, 0, 0, Math.PI);
+    ink(ctx, 9);
+    ctx.stroke();
+    ctx.strokeStyle = chromeGrad(ctx, 84, 93);
+    ctx.lineWidth = 5.5;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(left[1].x + 7, left[1].y);
+    ctx.quadraticCurveTo(left[3].x + 6, 14, left[5].x + 8, 65);
+    ctx.strokeStyle = 'rgba(255,255,255,0.61)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  } else {
+    const glass = ctx.createLinearGradient(-FAN_HALF, 0, FAN_HALF, 0);
+    glass.addColorStop(0, 'rgba(105,193,201,0.34)');
+    glass.addColorStop(0.28, 'rgba(222,255,247,0.13)');
+    glass.addColorStop(0.72, 'rgba(154,229,224,0.06)');
+    glass.addColorStop(1, 'rgba(78,176,182,0.38)');
+    ctx.fillStyle = glass;
+    rr(ctx, -48, FAN_OUTLET + 10, 96, 188, 21);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(241,255,253,0.57)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-38, FAN_OUTLET + 31);
+    ctx.lineTo(-38, 64);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(0, FAN_OUTLET + 4, 49, 13, 0, 0, Math.PI);
+    ink(ctx, 8);
+    ctx.stroke();
+    ctx.strokeStyle = chromeGrad(ctx, FAN_OUTLET + 5, FAN_OUTLET + 20);
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    fillPath(ctx, (c2) => rr(c2, -FAN_HALF, 101, FAN_HALF * 2, 14, 6), bodyGrad(ctx, '#469CA2', 101, 115), 2);
+    gloss(ctx, -42, 103, 84, 2, 1, 0.45);
+  }
 }
 
 /**
@@ -357,23 +434,21 @@ export function drawPiece(ctx: CanvasRenderingContext2D, p: Piece) {
  * Se hornea a media resolución (una sombra suave no necesita más) y se dibuja
  * una sola vez por pieza, en espacio mundo.
  */
-export function getPieceShadow(p: Piece, scale = spriteScale): Sprite {
-  const key = `${p.defId}|${p.color}|${p.len}|${p.variant}|${scale}`;
+export function getPieceShadow(p: Piece): Sprite {
+  const key = `${p.defId}|${p.len}|${p.variant}`;
   const hit = shadowCache.get(key);
   if (hit) {
     shadowCache.delete(key);
     shadowCache.set(key, hit);
     return hit;
   }
-  const s = getPieceSprite(p, scale);
-  const sil = silhouette(s.canvas, '#101C2C');
-  const half = makeCanvas(sil.width / 2, sil.height / 2);
-  const hctx = half.getContext('2d')!;
-  hctx.imageSmoothingEnabled = true;
-  hctx.drawImage(sil, 0, 0, half.width, half.height);
-  const soft = blurCanvas(half, 2);
+  const s = getPieceSprite(p);
+  const half = makeCanvas(s.w / 2, s.h / 2);
+  half.getContext('2d')!.drawImage(s.canvas, 0, 0, half.width, half.height);
+  const soft = blurCanvas(silhouette(half, '#101C2C'), 2);
   const shadow = { canvas: soft, w: s.w, h: s.h };
   shadowCache.set(key, shadow);
+  shadowPixels += soft.width * soft.height;
   trimCache();
   return shadow;
 }
@@ -520,84 +595,52 @@ function buildPieceSprite(p: Piece, ww: number, hh: number, scale = spriteScale)
       ctx.moveTo(-half + 22, -9.4);
       ctx.lineTo(half - 22, -9.4);
       ctx.stroke();
+    } else if (p.defId === 'sTrack') {
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      const path = (offset: number) => {
+        ctx.beginPath();
+        ctx.moveTo(S_TRACK[0].x, S_TRACK[0].y + offset);
+        for (const point of S_TRACK.slice(1)) ctx.lineTo(point.x, point.y + offset);
+      };
+      path(4);
+      ink(ctx, 24);
+      ctx.stroke();
+      path(3);
+      ctx.strokeStyle = tubeGrad(ctx, c, -45, 50);
+      ctx.lineWidth = 20;
+      ctx.stroke();
+      path(-5);
+      ctx.strokeStyle = 'rgba(255,255,255,0.66)';
+      ctx.lineWidth = 2.6;
+      ctx.stroke();
+      for (const { x, y } of [S_TRACK[0], S_TRACK[S_TRACK.length - 1]]) {
+        chromeCap(ctx, x - 7, y - 10, 14, 24, 5);
+      }
     } else if (p.defId === 'funnel') {
       const { left: L, right: R } = funnelLayout(p);
       const topHalf = -L[0].x;
-      const body = (c2: CanvasRenderingContext2D) => {
-        c2.moveTo(L[0].x, L[0].y);
-        for (let i = 1; i < L.length; i++) c2.lineTo(L[i].x, L[i].y);
-        for (let i = R.length - 1; i >= 0; i--) c2.lineTo(R[i].x, R[i].y);
-        c2.closePath();
-      };
-      const glass = ctx.createLinearGradient(0, -84, 0, 84);
-      glass.addColorStop(0, '#F2FBFF');
-      glass.addColorStop(0.22, mix(c, '#FFFFFF', 0.58));
-      glass.addColorStop(0.62, c);
-      glass.addColorStop(1, mix(c, '#0E1B2C', 0.28));
-      fillPath(ctx, body, glass, 3);
-      // Facetas interiores: una iluminada a la izquierda y otra en sombra.
-      ctx.fillStyle = 'rgba(255,255,255,0.2)';
-      ctx.beginPath();
-      ctx.moveTo(L[0].x + 5, L[0].y + 6);
-      ctx.lineTo(L[2].x + 2, L[2].y);
-      ctx.lineTo(L[4].x + 4, L[4].y);
-      ctx.lineTo(L[5].x + 6, L[5].y - 2);
-      ctx.lineTo(-46, 60);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = 'rgba(10,30,54,0.1)';
-      ctx.beginPath();
-      ctx.moveTo(R[0].x - 6, R[0].y + 4);
-      ctx.lineTo(R[2].x - 4, R[2].y);
-      ctx.lineTo(R[4].x - 6, R[4].y);
-      ctx.lineTo(40, 62);
-      ctx.lineTo(44, 40);
-      ctx.closePath();
-      ctx.fill();
-      // Reflejo ancho del cristal.
-      const sheen = ctx.createLinearGradient(-70, -70, -10, 60);
-      sheen.addColorStop(0, 'rgba(255,255,255,0.42)');
-      sheen.addColorStop(0.55, 'rgba(255,255,255,0.1)');
-      sheen.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = sheen;
-      ctx.beginPath();
-      ctx.moveTo(-92, -74);
-      ctx.lineTo(-58, -72);
-      ctx.lineTo(-30, 58);
-      ctx.lineTo(-42, 62);
-      ctx.closePath();
-      ctx.fill();
-      // Boca superior.
+      const glass = ctx.createLinearGradient(0, -89, 0, 88);
+      glass.addColorStop(0, mix(c, '#172D43', 0.66));
+      glass.addColorStop(0.37, mix(c, '#FFFFFF', 0.46));
+      glass.addColorStop(0.73, mix(c, '#FFFFFF', 0.34));
+      glass.addColorStop(1, mix(c, '#182C41', 0.4));
       fillPath(ctx, (c2) => {
-        c2.ellipse(0, -80, topHalf + 2, 13, 0, 0, TAU);
-      }, (() => {
-        const g = ctx.createLinearGradient(0, -93, 0, -67);
-        g.addColorStop(0, '#F4FCFF');
-        g.addColorStop(0.45, mix(c, '#FFFFFF', 0.2));
-        g.addColorStop(1, mix(c, '#0E1B2C', 0.24));
-        return g;
-      })(), 2.8);
-      ctx.fillStyle = '#173A5E';
+        c2.ellipse(0, L[0].y, topHalf, 13, 0, 0, Math.PI, true);
+        for (let i = 1; i < L.length; i++) c2.lineTo(L[i].x, L[i].y);
+        c2.quadraticCurveTo(0, 68, R[R.length - 1].x, R[R.length - 1].y);
+        for (let i = R.length - 2; i >= 0; i--) c2.lineTo(R[i].x, R[i].y);
+        c2.closePath();
+      }, glass, 3);
       ctx.beginPath();
-      ctx.ellipse(0, -78, Math.max(24, topHalf - 7), 8, 0, 0, TAU);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      ctx.ellipse(-6, -83, Math.max(20, topHalf - 20), 5, -0.03, Math.PI * 1.06, Math.PI * 1.94);
+      ctx.ellipse(0, L[0].y, topHalf, 13, 0, Math.PI, TAU);
+      ctx.strokeStyle = mix(c, '#FFFFFF', 0.52);
+      ctx.lineWidth = 3;
       ctx.stroke();
-      // Cuello cromado y salida.
-      chromeCap(ctx, -27, 74, 54, 19, 8);
-      ctx.fillStyle = '#14283F';
+      ctx.fillStyle = '#203648';
       ctx.beginPath();
-      ctx.ellipse(0, 91, 19, 4.8, 0, 0, TAU);
+      ctx.ellipse(0, 84, 40, 8, 0, 0, TAU);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(L[3].x + 6, L[3].y);
-      ctx.lineTo(L[5].x + 6, L[5].y - 8);
-      ctx.stroke();
     } else if (p.defId === 'bumper') {
       fillPath(ctx, (c2) => {
         c2.arc(0, 0, 30, 0, TAU);
@@ -1231,47 +1274,26 @@ function buildPieceSprite(p: Piece, ww: number, hh: number, scale = spriteScale)
       ring(-half, PALETTE.purple);
       ring(half, PALETTE.teal);
     } else if (p.defId === 'fan') {
-      // Columna de aire: cristal teñido con marco cromado.
-      const air = ctx.createLinearGradient(0, -104, 0, 104);
-      air.addColorStop(0, 'rgba(160,222,242,0.4)');
-      air.addColorStop(0.5, 'rgba(126,199,226,0.24)');
-      air.addColorStop(1, 'rgba(78,160,190,0.32)');
-      fillPath(ctx, (c2) => rr(c2, -48, -104, 96, 208, 26), air, 2.8);
-      ctx.strokeStyle = 'rgba(255,255,255,0.42)';
-      ctx.lineWidth = 2;
-      rr(ctx, -40, -96, 80, 192, 20);
+      const air = ctx.createLinearGradient(0, FAN_OUTLET, 0, 102);
+      air.addColorStop(0, 'rgba(184,230,222,0.38)');
+      air.addColorStop(0.6, 'rgba(83,172,184,0.25)');
+      air.addColorStop(1, 'rgba(45,102,125,0.65)');
+      fillPath(ctx, (c2) => rr(c2, -48, FAN_OUTLET + 3, 96, 185, 21), air, 2.3);
+      fillPath(ctx, (c2) => c2.ellipse(0, FAN_OUTLET + 4, 49, 13, 0, 0, TAU), '#31536B', 2.5);
+      ctx.beginPath();
+      ctx.ellipse(0, FAN_OUTLET + 4, 49, 13, 0, Math.PI, TAU);
+      ctx.strokeStyle = '#C1D8D7';
+      ctx.lineWidth = 4;
       ctx.stroke();
-      // Flechas de aire.
-      for (const y of [-44, 0, 44]) {
+      fillPath(ctx, (c2) => c2.ellipse(0, 99, FAN_HALF, 12, 0, 0, TAU), '#284A58', 2.4);
+      for (const x of [-27, -14, 0, 14, 27]) {
         ctx.beginPath();
-        ctx.moveTo(-20, y + 11);
-        ctx.lineTo(0, y - 9);
-        ctx.lineTo(20, y + 11);
-        ink(ctx, 6.4);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(-20, y + 11);
-        ctx.lineTo(0, y - 9);
-        ctx.lineTo(20, y + 11);
-        ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-        ctx.lineWidth = 3.2;
+        ctx.moveTo(x + 5, 95);
+        ctx.lineTo(x - 5, 102);
+        ctx.strokeStyle = '#80BCBB';
+        ctx.lineWidth = 2.5;
         ctx.stroke();
       }
-      chromeCap(ctx, -52, -114, 104, 18, 9);
-      fillPath(ctx, (c2) => rr(c2, -52, 84, 104, 24, 10), bodyGrad(ctx, c, 84, 108), 2.8);
-      gloss(ctx, -48, 86, 96, 5, 2.5, 0.4);
-      // Brillo vertical del cristal.
-      const shine = ctx.createLinearGradient(-40, 0, 10, 0);
-      shine.addColorStop(0, 'rgba(255,255,255,0.5)');
-      shine.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = shine;
-      ctx.beginPath();
-      ctx.moveTo(-40, -92);
-      ctx.lineTo(-26, -92);
-      ctx.lineTo(-26, 76);
-      ctx.lineTo(-40, 84);
-      ctx.closePath();
-      ctx.fill();
     } else if (p.defId === 'electromagnet') {
       const horseshoe = (c2: CanvasRenderingContext2D) => {
         c2.moveTo(-24, -30);
@@ -1730,7 +1752,7 @@ export function drawPreview(canvas: HTMLCanvasElement, itemId: string, kind: 'pi
     color: getPieceDef(itemId).defaultColor,
     variant: 0
   };
-  const s = getPieceSprite(p, Math.max(2, Math.min(2.5, dpr)));
+  const s = getPieceSprite(p, 1);
   // Las piezas muy alargadas se recortan por los extremos: si se encogieran
   // hasta caber quedarían como una línea. El resto se muestra completo.
   const cropped =
@@ -1745,7 +1767,10 @@ export function drawPreview(canvas: HTMLCanvasElement, itemId: string, kind: 'pi
   const dw = s.w * scale;
   const dh = s.h * scale;
   drawSoftShadow(ctx, cw / 2 + 2, ch / 2 + dh * 0.34, dw * 0.3, Math.max(3, dh * 0.12), 0.34);
-  ctx.drawImage(s.canvas, cw / 2 - dw / 2, ch / 2 - dh / 2 - 1, dw, dh);
+  const x = cw / 2 - dw / 2;
+  const y = ch / 2 - dh / 2 - 1;
+  ctx.drawImage(s.canvas, x, y, dw, dh);
+  if (p.defId === 'funnel' || p.defId === 'fan') ctx.drawImage(getPieceSprite(p, 1, true).canvas, x, y, dw, dh);
 }
 
 function drawGlyph(ctx: CanvasRenderingContext2D, name: string, cx: number, cy: number, r: number) {

@@ -330,4 +330,15 @@ function constellation(): StructureDef {
   return structure('constelaciones', 'Las Constelaciones', 'Islas, burbujas y viento: un cielo de piezas para explorar.', pieces);
 }
 
-export const STRUCTURES: StructureDef[] = [cascade(), vortex(), orchestra(), factory(), constellation()];
+function windChimes(): StructureDef {
+  return structure('viento', 'La Brisa', 'Un embudo, un canal y un ventilador que llevan las canicas al xilófono.', [
+    { defId: 'marbleFactory', x: -240, y: -385 },
+    funnel(-240, -183, 260, 3),
+    { defId: 'sTrack', x: -145, y: 15, color: 2 },
+    conveyor(69, 72, 0, 200),
+    { defId: 'fan', x: 104, y: -44.5 },
+    xylo(350, 128, 9 * DEG)
+  ]);
+}
+
+export const STRUCTURES: StructureDef[] = [cascade(), vortex(), orchestra(), factory(), constellation(), windChimes()];

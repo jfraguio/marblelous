@@ -40,9 +40,9 @@ if (intro) {
     done = true;
     intro.classList.add('is-out');
     document.body.classList.remove('intro-open');
-    window.setTimeout(() => intro.remove(), reduced ? 40 : 760);
+    window.setTimeout(() => intro.remove(), reduced ? 40 : 480);
   };
-  const timer = window.setTimeout(finish, reduced ? 320 : 1950);
+  const timer = window.setTimeout(finish, reduced ? 160 : 1110);
   intro.addEventListener(
     'pointerdown',
     () => {
@@ -68,8 +68,9 @@ document.addEventListener(
   () => {
     void audio.unlock();
   },
-  { once: true, passive: true }
+  { capture: true, passive: true }
 );
+document.addEventListener('keydown', () => void audio.unlock(), { once: true, capture: true });
 
 // iOS Safari: evitar el zoom de página con el gesto de pellizco del sistema.
 document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });

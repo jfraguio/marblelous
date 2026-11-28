@@ -10,8 +10,6 @@ export interface Camera {
 }
 
 export type Mode = 'build' | 'play';
-export type PieceCategory = 'build' | 'music' | 'energy';
-export type ShopCategory = PieceCategory | 'marbles';
 export type MaterialId = 'brick' | 'rubber' | 'chime' | 'conveyor' | 'metal' | 'field';
 
 export interface Piece {
@@ -63,7 +61,7 @@ export interface Collider {
   uy: number;
 }
 
-export type TriggerKind = 'goal' | 'star' | 'boost' | 'portal' | 'fan' | 'spiral' | 'bubbleLift' | 'magnet' | 'hourglass' | 'cannon';
+export type TriggerKind = 'goal' | 'star' | 'boost' | 'portal' | 'fan' | 'funnel' | 'spiral' | 'bubbleLift' | 'magnet' | 'hourglass' | 'cannon';
 
 export interface Trigger {
   kind: TriggerKind;
@@ -85,7 +83,6 @@ export interface Trigger {
 export interface MarbleType {
   id: string;
   label: string;
-  price: number;
   r: number;
   density: number;
   e: number;
@@ -133,6 +130,9 @@ export interface Marble {
   rideNextChime: number;
   rideScale: number;
   rideDepth: number;
+  fanRide?: { pieceId: number; t: number; x: number; y: number; exitX: number };
+  lastFanPiece: number;
+  fanReadyAt: number;
   bubbled: boolean;
   bubbleT: number;
   bubbleReadyAt: number;
@@ -142,8 +142,6 @@ export interface Marble {
 
 export interface PieceDef {
   id: string;
-  category: PieceCategory;
-  price: number;
   label: string;
   w: number;
   h: number;
@@ -168,7 +166,8 @@ export interface PhysEvent {
     | 'spiral'
     | 'bubble'
     | 'pop'
-    | 'air'
+    | 'fan'
+    | 'contact'
     | 'marble'
     | 'rainbow'
     | 'hourglass';
@@ -179,6 +178,7 @@ export interface PhysEvent {
   impact: number;
   marbleId: number;
   speed: number;
+  material?: MaterialId;
 }
 
 export interface Particle {
@@ -196,42 +196,22 @@ export interface Particle {
   alpha: number;
 }
 
-export interface Records {
-  combo: number;
-  speed: number;
-  airTime: number;
-  marbles: number;
-  bestDrop: number;
-  goals: number;
-}
-
 export interface Settings {
   quality: 'auto' | 'high' | 'low';
   haptics: boolean;
+  sound: 0 | 1 | 2;
 }
 
 export interface WorldData {
   pieces: Piece[];
   camera: Camera;
-  records: Records;
 }
 
 export interface SaveData {
   v: number;
   updatedAt: number;
-  currency: number;
-  lifetime: number;
-  owned: string[];
   activeWorld: number;
   worlds: WorldData[];
   settings: Settings;
   selectedMarble: string;
-}
-
-export interface ShopItem {
-  id: string;
-  category: ShopCategory;
-  price: number;
-  label: string;
-  kind: 'piece' | 'marble';
 }

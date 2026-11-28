@@ -4,6 +4,7 @@ import {
   drawBubbleSprite,
   drawMarbleSprite,
   drawPiece,
+  drawPieceFront,
   drawSoftShadow,
   getPieceShadow,
   LIGHT_X,
@@ -23,8 +24,7 @@ import {
   spiralLocal,
   xyloLayout
 } from './pieces';
-import { PostFX } from './postfx';
-import { clamp, hash2, lerp, prefersReducedMotion, rgba, TAU, CAMERA_TILT } from './util';
+import { clamp, hash2, lerp, makeCanvas, prefersReducedMotion, rgba, TAU, CAMERA_TILT } from './util';
 import { WORLD_THEMES, worldTheme } from './worlds';
 
 interface Dust {
@@ -46,15 +46,17 @@ export class Renderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private game: Game;
-  private post = new PostFX();
   private theme = WORLD_THEMES[0];
+  private background: HTMLCanvasElement | null = null;
   private width = 1;
   private height = 1;
   private dpr = 1;
-  private level = 0;
+  private level = 1;
   private qualitySetting = 'auto';
   private avgFrame = 16.7;
-  private spriteScale = 2;
+  private avgRender = 0;
+  private healthySince = 0;
+  private spriteScale = 1.5;
   private lastFrame = 0;
   private lastCheck = 0;
   private lastRender = 0;
@@ -63,6 +65,11 @@ export class Renderer {
   private visible: Piece[] = [];
   private sortedPieces: Piece[] = [];
   private lastPieceRevision = -1;
+  private radiusByPiece = new Map<number, number>();
+  private outside: Marble[] = [];
+  private inside = new Map<number, Marble[]>();
+  private marbleLists: Marble[][] = [];
+  private lastEmptyView: { x: number; y: number; zoom: number; world: number; mode: Game['mode'] } | null = null;
 
   constructor(canvas: HTMLCanvasElement, game: Game) {
     this.canvas = canvas;
@@ -70,6 +77,8 @@ export class Renderer {
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) throw new Error('Canvas 2D no disponible');
     this.ctx = ctx;
+    setSpriteScale(this.spriteScale);
+    setSpriteBudget(108);
     this.resize(true);
     window.addEventListener('resize', () => this.resize());
     window.addEventListener('orientationchange', () => window.setTimeout(() => this.resize(), 120));
@@ -82,7 +91,8 @@ export class Renderer {
     const next = clamp(Math.round(level), 0, 2);
     if (next === this.level) return;
     this.level = next;
-    setSpriteBudget(next === 2 ? 70 : next === 1 ? 100 : 140);
+    setSpriteBudget(next === 2 ? 74 : next === 1 ? 108 : 145);
+    this.game.audio.setVoiceLimit(next === 2 ? 8 : 14);
     this.resize(true);
   }
 
@@ -93,29 +103,39 @@ export class Renderer {
   private resize(force = false) {
     const cssW = Math.max(1, this.canvas.clientWidth || window.innerWidth);
     const cssH = Math.max(1, this.canvas.clientHeight || window.innerHeight);
-    const cap = this.level === 0 ? 2 : this.level === 1 ? 1.5 : 1.25;
-    const dpr = Math.min(window.devicePixelRatio || 1, cap);
+    const cap = this.level === 0 ? 2 : this.level === 1 ? 1.5 : 1;
+    const pixels = this.level === 0 ? 4_200_000 : 2_400_000;
+    const dpr = Math.min(window.devicePixelRatio || 1, cap, Math.sqrt(pixels / (cssW * cssH)));
     if (!force && cssW === this.width && cssH === this.height && Math.abs(dpr - this.dpr) < 0.01) return;
+    if (cssW !== this.width || cssH !== this.height) this.background = null;
+    this.lastEmptyView = null;
     this.width = cssW;
     this.height = cssH;
     this.dpr = dpr;
     this.canvas.width = Math.round(cssW * dpr);
     this.canvas.height = Math.round(cssH * dpr);
     this.ctx.imageSmoothingEnabled = true;
-    this.ctx.imageSmoothingQuality = 'high';
+    this.ctx.imageSmoothingQuality = this.level === 0 ? 'high' : 'low';
     this.game.setViewport(cssW, cssH);
   }
 
   render(alpha: number, now: number) {
     const g = this.game;
-    this.checkQuality(now);
     if (this.qualitySetting !== g.settings.quality) {
       this.qualitySetting = g.settings.quality;
-      if (this.qualitySetting === 'high') this.setLevel(0);
-      else if (this.qualitySetting === 'low') this.setLevel(2);
+      this.healthySince = 0;
+      this.setLevel(this.qualitySetting === 'high' ? 0 : this.qualitySetting === 'low' ? 2 : 1);
     }
-    const ctx = this.ctx;
+    this.checkQuality(now);
+    if (this.level === 2 && now - this.lastRender < 31.5) return;
     const cam = g.camera;
+    const empty = !g.pieces.length && !g.marbles.length && !g.particles.length && !this.dust.length && !g.ghost && !g.dropPreview;
+    const lastEmpty = this.lastEmptyView;
+    if (empty && lastEmpty && lastEmpty.x === cam.x && lastEmpty.y === cam.y && lastEmpty.zoom === cam.zoom &&
+        lastEmpty.world === g.activeWorld && lastEmpty.mode === g.mode) return;
+    this.lastEmptyView = empty ? { ...cam, world: g.activeWorld, mode: g.mode } : null;
+    const renderStart = performance.now();
+    const ctx = this.ctx;
     const w = this.width;
     const h = this.height;
     const dpr = this.dpr;
@@ -123,23 +143,29 @@ export class Renderer {
     const dt = Math.min(0.05, Math.max(0, (now - this.lastRender) / 1000));
     this.lastRender = now;
     const zoom = cam.zoom;
-    this.theme = worldTheme(g.activeWorld);
+    const theme = worldTheme(g.activeWorld);
+    if (theme !== this.theme) {
+      this.theme = theme;
+      this.background = null;
+    }
 
     // LOD: se hornea a la resolución real (zoom × DPR) y se sube de nivel con
     // histéresis, para no re-hornear sprites en cada frame de pinch.
-    const needed = zoom * dpr;
+    const needed = Math.min(this.level === 0 ? 2.5 : this.level === 1 ? 2 : 1, zoom * dpr);
     let targetScale = this.spriteScale;
-    if (needed > targetScale + 0.25) targetScale = Math.min(3, Math.ceil(needed * 4) / 4);
-    else if (needed < targetScale * 0.72) targetScale = Math.max(1, Math.ceil(needed * 4) / 4);
+    if (needed > targetScale + 0.22 || needed < targetScale * 0.74) {
+      targetScale = Math.max(1, Math.round(needed * 2) / 2);
+    }
     if (targetScale !== this.spriteScale) {
       this.spriteScale = targetScale;
       setSpriteScale(targetScale);
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = this.theme.paper;
-    ctx.fillRect(0, 0, w, h);
-    this.drawBackdrop(ctx, w, h, cam, now);
+    this.background ??= this.bakeBackground(w + 48, h + 40);
+    const parallaxX = clamp(-cam.x * 0.014, -24, 24);
+    const parallaxY = clamp(-cam.y * 0.012, -20, 20);
+    ctx.drawImage(this.background, -24 + parallaxX, -20 + parallaxY, w + 48, h + 40);
 
     // visible world rect
     const minX = cam.x - w / 2 / zoom - 80;
@@ -155,7 +181,7 @@ export class Renderer {
       (w / 2 - cam.x * zoom) * dpr,
       (h / 2 - cam.y * zoom * CAMERA_TILT) * dpr
     );
-    this.drawGrid(minX, maxX, minY, maxY, zoom);
+    if (g.mode === 'build') this.drawGrid(minX, maxX, minY, maxY, zoom);
 
     // Orden por profundidad: lo que está más abajo se dibuja encima.
     // Solo se reordena cuando cambia el conjunto/posición de piezas.
@@ -163,14 +189,20 @@ export class Renderer {
       this.lastPieceRevision = g.pieceRevision;
       const sorted = this.sortedPieces;
       sorted.length = 0;
-      for (const p of g.pieces) sorted.push(p);
+      this.radiusByPiece.clear();
+      for (const p of g.pieces) {
+        sorted.push(p);
+        const { w, h } = pieceHitSize(p);
+        this.radiusByPiece.set(p.id, Math.hypot(w, h) / 2 + 40);
+      }
       sorted.sort((a, b) => a.y - b.y);
     }
     const visible = this.visible;
     visible.length = 0;
     for (const p of this.sortedPieces) {
       if (p.disabledUntil && p.disabledUntil > now) continue;
-      if (p.x < minX - 420 || p.x > maxX + 420 || p.y < minY - 420 || p.y > maxY + 420) continue;
+      const r = this.radiusByPiece.get(p.id)!;
+      if (p.x < minX - r || p.x > maxX + r || p.y < minY - r || p.y > maxY + r) continue;
       visible.push(p);
     }
 
@@ -179,46 +211,54 @@ export class Renderer {
       for (const p of visible) this.drawPieceShadow(ctx, p);
     }
 
+    this.outside.length = 0;
+    for (const list of this.inside.values()) {
+      list.length = 0;
+      this.marbleLists.push(list);
+    }
+    this.inside.clear();
+    for (const m of g.marbles) {
+      if (!m.alive || m.x < minX || m.x > maxX || m.y < minY || m.y > maxY) continue;
+      const x = m.awake ? lerp(m.px, m.x, alpha) : m.x;
+      const y = m.awake ? lerp(m.py, m.y, alpha) : m.y;
+      const vessel = m.fanRide?.pieceId ?? (m.bubbled || m.ridePiece ? 0 : g.physics.funnelAt(x, y, m.r));
+      if (vessel && this.radiusByPiece.has(vessel)) {
+        let list = this.inside.get(vessel);
+        if (!list) {
+          list = this.marbleLists.pop() ?? [];
+          this.inside.set(vessel, list);
+        }
+        list.push(m);
+      } else {
+        this.outside.push(m);
+      }
+    }
     for (const p of visible) {
-      this.drawWorldPiece(ctx, p, now, zoom);
+      const inside = this.inside.get(p.id);
+      this.drawWorldPiece(ctx, p, now, reduced, !inside);
+      if (!inside) continue;
+      for (const m of inside) this.drawMarble(ctx, m, alpha, now, reduced, true);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      if (p.rot) ctx.rotate(p.rot);
+      drawPieceFront(ctx, p);
+      ctx.restore();
     }
 
     // ghost piece under marbles
-    if (g.ghost && g.ghost.kind === 'piece') {
-      const def = getPieceDef(g.ghost.defId);
-      const temp: Piece = {
-        id: -1,
-        defId: g.ghost.defId,
-        x: g.ghost.x,
-        y: g.ghost.y,
-        rot: g.ghost.rot,
-        len: def.id === 'ramp' ? 160 : 0,
-        color: def.defaultColor,
-        variant: 0
-      };
-      if (this.level < 2) this.drawPieceShadow(ctx, temp);
+    if (g.ghost) {
+      const temp = g.ghost;
       ctx.save();
-      ctx.globalAlpha = 0.48;
+      ctx.globalAlpha = g.snap ? 0.77 : 0.52;
       ctx.translate(temp.x, temp.y);
       ctx.rotate(temp.rot);
       drawPiece(ctx, temp);
       ctx.restore();
-      // dashed outline
-      ctx.save();
-      ctx.translate(temp.x, temp.y);
-      ctx.rotate(temp.rot);
-      ctx.strokeStyle = rgba(this.theme.ink, 0.35);
-      ctx.lineWidth = 1.6 / zoom;
-      ctx.setLineDash([6 / zoom, 5 / zoom]);
-      const hs = pieceHitSize(temp);
-      ctx.strokeRect(-hs.w / 2, -hs.h / 2, hs.w, hs.h);
-      ctx.restore();
+      this.drawSelection(ctx, temp, zoom);
     }
 
-    for (const m of g.marbles) {
-      if (!m.alive) continue;
-      if (m.x < minX || m.x > maxX || m.y < minY || m.y > maxY) continue;
-      this.landingDust(m, reduced);
+    for (const m of this.outside) {
+      if (this.level === 0) this.landingDust(m, reduced);
       this.drawMarble(ctx, m, alpha, now, reduced);
     }
     if (this.prevAir.size > 400) this.prevAir.clear();
@@ -227,7 +267,7 @@ export class Renderer {
 
     this.drawParticles(ctx, now);
 
-    if (g.selectedPieceId) {
+    if (g.selectedPieceId && !g.ghost) {
       const p = g.selectedPiece;
       if (p) this.drawSelection(ctx, p, zoom);
     }
@@ -236,34 +276,40 @@ export class Renderer {
       this.drawDropPreview(ctx, g.dropPreview, zoom);
     }
 
-    if (g.ghost && g.ghost.kind === 'marble') {
-      const type = MARBLE_BY_ID.get(g.ghost.typeId);
-      if (type) {
-        if (this.level < 2) drawSoftShadow(ctx, g.ghost.x + 4, g.ghost.y + 9, type.r * 1.9, type.r * 0.95, 0.35);
-        drawMarbleSprite(ctx, type, g.ghost.x, g.ghost.y, type.r * 1.15, 0.6);
-      }
+    if (g.snap) this.drawJoint(ctx, g.snap.jointX, g.snap.jointY, zoom, 0, 1);
+    if (g.snapRipple && now - g.snapRipple.at < 310) {
+      const age = (now - g.snapRipple.at) / 310;
+      this.drawJoint(ctx, g.snapRipple.x, g.snapRipple.y, zoom, reduced ? 0 : age, 1 - age);
     }
+    this.avgRender = lerp(this.avgRender, performance.now() - renderStart, 0.08);
+  }
 
-    this.post.apply(ctx, this.canvas, w, h, dpr, this.level, now);
+  private bakeBackground(w: number, h: number): HTMLCanvasElement {
+    const scale = Math.min(1, 1200 / Math.max(w, h));
+    const canvas = makeCanvas(w * scale, h * scale);
+    const ctx = canvas.getContext('2d', { alpha: false })!;
+    ctx.scale(canvas.width / w, canvas.height / h);
+    const wash = ctx.createLinearGradient(0, 0, w * 0.24, h);
+    wash.addColorStop(0, this.theme.paper);
+    wash.addColorStop(1, this.theme.paper2);
+    ctx.fillStyle = wash;
+    ctx.fillRect(0, 0, w, h);
+    this.paintBackdrop(ctx, w, h);
+    return canvas;
   }
 
   /** Fondo de estudio: charco de luz y penumbra con parallax leve. */
-  private drawBackdrop(
+  private paintBackdrop(
     ctx: CanvasRenderingContext2D,
     w: number,
-    h: number,
-    cam: { x: number; y: number },
-    now: number
+    h: number
   ) {
     const theme = this.theme;
-    const px = clamp(-cam.x * 0.018, -90, 90);
-    const py = clamp(-cam.y * 0.018, -70, 70);
-    const pulse = 0.5 + 0.5 * Math.sin(now * 0.00022);
     const space = theme.kind === 'space';
     const volcano = theme.kind === 'volcano';
     const warm = space ? '120,150,255' : volcano ? '255,120,50' : '255,252,242';
 
-    const g1 = ctx.createRadialGradient(w * 0.26 + px, h * 0.1 + py, 0, w * 0.26 + px, h * 0.1 + py, Math.max(w, h) * 0.95);
+    const g1 = ctx.createRadialGradient(w * 0.26, h * 0.1, 0, w * 0.26, h * 0.1, Math.max(w, h) * 0.95);
     g1.addColorStop(0, theme.light);
     g1.addColorStop(0.55, `rgba(${warm},${space ? 0.045 : volcano ? 0.07 : 0.09})`);
     g1.addColorStop(1, `rgba(${warm},0)`);
@@ -271,11 +317,11 @@ export class Renderer {
     ctx.fillRect(0, 0, w, h);
 
     const g2 = ctx.createRadialGradient(
-      w * 0.82 - px * 0.6,
-      h * 0.92 - py * 0.6,
+      w * 0.82,
+      h * 0.92,
       0,
-      w * 0.82 - px * 0.6,
-      h * 0.92 - py * 0.6,
+      w * 0.82,
+      h * 0.92,
       Math.max(w, h) * 0.85
     );
     g2.addColorStop(0, theme.shade);
@@ -283,20 +329,60 @@ export class Renderer {
     ctx.fillStyle = g2;
     ctx.fillRect(0, 0, w, h);
 
-    this.drawWorldDecor(ctx, w, h, cam, now, pulse);
+    this.drawWorldDecor(ctx, w, h);
   }
 
   private drawWorldDecor(
     ctx: CanvasRenderingContext2D,
     w: number,
-    h: number,
-    cam: { x: number; y: number },
-    now: number,
-    pulse: number
+    h: number
   ) {
     const kind = this.theme.kind;
-    const ox = clamp(-cam.x * 0.03, -60, 60);
-    const oy = clamp(-cam.y * 0.03, -40, 40);
+    // Una sola composición por fondo; el paralaje desplaza la imagen completa.
+    const now = 28000;
+    const pulse = 0.5;
+    const ox = 0;
+    const oy = 0;
+
+    if (kind === 'garden') {
+      ctx.fillStyle = 'rgba(255,232,177,0.64)';
+      ctx.beginPath();
+      ctx.arc(w * 0.77, h * 0.21, Math.min(w, h) * 0.085, 0, TAU);
+      ctx.fill();
+      for (let i = 0; i < 3; i++) {
+        const base = h * (0.73 + i * 0.09);
+        ctx.fillStyle = ['#CEDBC5', '#BFD4BA', '#B3CBB0'][i];
+        ctx.beginPath();
+        ctx.moveTo(-2, h);
+        ctx.lineTo(-2, base);
+        ctx.bezierCurveTo(w * 0.25, base - h * 0.21, w * 0.56, base + h * 0.17, w + 2, base - h * 0.09);
+        ctx.lineTo(w + 2, h);
+        ctx.closePath();
+        ctx.fill();
+      }
+      for (let i = 0; i < 21; i++) {
+        const seed = hash2(i + 8, 41);
+        const t = (seed % 1000) / 1000;
+        const x = w * t;
+        const ground = h * (0.91 + 0.09 * ((seed >>> 12) % 17) / 17);
+        const height = 22 + ((seed >>> 18) % 77);
+        const bend = i % 2 ? -13 : 13;
+        ctx.strokeStyle = 'rgba(65,118,87,0.31)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, ground);
+        ctx.quadraticCurveTo(x + bend * 0.35, ground - height * 0.58, x + bend, ground - height);
+        ctx.stroke();
+        ctx.fillStyle = i % 4 ? 'rgba(70,126,91,0.24)' : 'rgba(214,154,86,0.44)';
+        ctx.beginPath();
+        ctx.ellipse(x + bend, ground - height, 4, 8, bend * 0.022, 0, TAU);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(x - bend / 3, ground - height * 0.47, 7, 3, bend * 0.045, 0, TAU);
+        ctx.fill();
+      }
+      return;
+    }
 
     if (kind === 'ocean') {
       // Rayos de luz oblicuos.
@@ -696,9 +782,10 @@ export class Renderer {
 
   /** Polvo y mini onda al aterrizar una canica. */
   private landingDust(m: Marble, reduced: boolean) {
+    if (reduced || this.dust.length > 84) return;
     const prev = this.prevAir.get(m.id) ?? 0;
     this.prevAir.set(m.id, m.airTime);
-    if (reduced || prev < 0.32 || m.airTime > 0.001) return;
+    if (prev < 0.32 || m.airTime > 0.001) return;
     const n = prev > 0.8 ? 7 : 4;
     for (let i = 0; i < n; i++) {
       const a = Math.random() * TAU;
@@ -745,26 +832,27 @@ export class Renderer {
   private drawGrid(minX: number, maxX: number, minY: number, maxY: number, zoom: number) {
     if (zoom < 0.58) return;
     const ctx = this.ctx;
-    const step = 40;
+    const step = this.level === 2 ? 80 : 40;
     const startX = Math.floor(minX / step) * step;
     const startY = Math.floor(minY / step) * step;
     const maxDots = 4200;
     const n = ((maxX - minX) / step) * ((maxY - minY) / step);
     if (n > maxDots) return;
     ctx.fillStyle = this.theme.grid;
-    const size = 2.3;
+    const size = 1.8;
+    ctx.beginPath();
     for (let x = startX; x <= maxX; x += step) {
       for (let y = startY; y <= maxY; y += step) {
-        ctx.fillRect(x - size / 2, y - size / 2, size, size);
+        ctx.rect(x - size / 2, y - size / 2, size, size);
       }
     }
+    ctx.fill();
   }
 
-  private drawWorldPiece(ctx: CanvasRenderingContext2D, p: Piece, now: number, zoom: number) {
-    if ((p.defId === 'star' || p.defId === 'bubble' || p.defId === 'hourglass') && p.disabledUntil && p.disabledUntil > now) return;
+  private drawWorldPiece(ctx: CanvasRenderingContext2D, p: Piece, now: number, reduced: boolean, withFront: boolean) {
     ctx.save();
     ctx.translate(p.x, p.y);
-    if (p.bornAt) {
+    if (p.bornAt && !reduced && p.defId !== 'fan' && p.defId !== 'funnel') {
       const age = now - p.bornAt;
       if (age >= 0 && age < 150) {
         const s = 0.9 + 0.1 * (age / 150);
@@ -774,33 +862,33 @@ export class Renderer {
     if (p.rot) ctx.rotate(p.rot);
 
     const def = getPieceDef(p.defId);
-    if (def.id === 'goal' && p.anim) {
+    if (def.id === 'goal' && p.anim && !reduced) {
       const age = (now - p.anim) / 1000;
       if (age >= 0 && age < 0.7) {
         ctx.rotate(Math.sin(age * 28) * 0.075 * Math.exp(-age * 3.2));
       }
     }
-    if (def.id === 'bumper' && p.flash) {
+    if (def.id === 'bumper' && p.flash && !reduced) {
       const age = (now - p.flash) / 1000;
       if (age >= 0 && age < 0.24) {
         const k = Math.exp(-age * 17);
         ctx.scale(1 + 0.09 * k, 1 - 0.12 * k);
       }
     }
-    if (def.id === 'bubble' && p.anim) {
+    if (def.id === 'bubble' && p.anim && !reduced) {
       ctx.translate(Math.sin(now * 0.09) * 1.6, 0);
     }
 
-    drawPiece(ctx, p);
+    drawPiece(ctx, p, withFront);
 
     if (def.id === 'electromagnet') {
       const attract = (p.polarity ?? 1) >= 0;
       const rgb = attract ? '46,158,151' : '217,93,57';
-      const pulse = 0.5 + 0.5 * Math.sin(now * 0.004);
+      const pulse = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(now * 0.004);
       ctx.strokeStyle = `rgba(${rgb},${0.14 + 0.12 * pulse})`;
       ctx.lineWidth = 2.2;
       ctx.setLineDash([7, 9]);
-      ctx.lineDashOffset = attract ? -now * 0.03 : now * 0.03;
+      ctx.lineDashOffset = reduced ? 0 : (attract ? -now : now) * 0.03;
       ctx.beginPath();
       ctx.arc(0, 0, 150, 0, TAU);
       ctx.stroke();
@@ -809,8 +897,8 @@ export class Renderer {
       ctx.strokeStyle = `rgba(${rgb},0.52)`;
       ctx.lineWidth = 2.4;
       ctx.lineCap = 'round';
-      for (let i = 0; i < 4; i++) {
-        const a = now * 0.0006 + (i * TAU) / 4;
+      for (let i = 0; i < (this.level === 2 ? 2 : 4); i++) {
+        const a = (reduced ? 0 : now * 0.0006) + (i * TAU) / 4;
         const r0 = attract ? 118 : 98;
         const r1 = attract ? 98 : 118;
         const x0 = Math.cos(a) * r0;
@@ -820,7 +908,7 @@ export class Renderer {
         ctx.beginPath();
         ctx.moveTo(x0, y0);
         ctx.lineTo(x1, y1);
-        const head = attract ? Math.atan2(y1 - y0, x1 - x0) : Math.atan2(y0 - y1, x0 - x1);
+        const head = Math.atan2(y1 - y0, x1 - x0);
         ctx.lineTo(x1 - Math.cos(head - 0.5) * 8, y1 - Math.sin(head - 0.5) * 8);
         ctx.moveTo(x1, y1);
         ctx.lineTo(x1 - Math.cos(head + 0.5) * 8, y1 - Math.sin(head + 0.5) * 8);
@@ -828,7 +916,7 @@ export class Renderer {
       }
     }
 
-    if (def.id === 'bubbleLift') {
+    if (def.id === 'bubbleLift' && this.level < 2 && !reduced) {
       const k = 0.5 + 0.5 * Math.sin(now * 0.003);
       ctx.strokeStyle = `rgba(143,211,238,${0.12 + 0.12 * k})`;
       ctx.lineWidth = 2.2;
@@ -840,7 +928,7 @@ export class Renderer {
     if (def.id === 'marbleFactory') {
       const on = p.powered !== false;
       const rgb = on ? '79,157,105' : '217,93,57';
-      const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
+      const pulse = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(now * 0.006);
       if (on) {
         ctx.fillStyle = `rgba(${rgb},${0.14 + 0.14 * pulse})`;
         ctx.beginPath();
@@ -874,7 +962,7 @@ export class Renderer {
       }
     }
 
-    if (p.defId === 'conveyor') {
+    if (p.defId === 'conveyor' && this.level === 0 && !reduced) {
       // Reflejo que recorre la cinta (las flechas ya van horneadas).
       const half = pieceLength(p) / 2;
       const span = Math.max(20, half * 2 - 20);
@@ -887,7 +975,7 @@ export class Renderer {
       ctx.fillRect(x - 30, -7, 60, 14);
     }
 
-    if (p.defId === 'booster') {
+    if (p.defId === 'booster' && this.level < 2 && !reduced) {
       const pulse = 0.12 + 0.06 * Math.sin(now * 0.006);
       ctx.strokeStyle = rgba(PALETTE.teal, pulse);
       ctx.lineWidth = 2;
@@ -895,7 +983,7 @@ export class Renderer {
       ctx.stroke();
     }
 
-    if (p.defId === 'star' && (!p.disabledUntil || p.disabledUntil < now)) {
+    if (p.defId === 'star' && this.level < 2 && !reduced) {
       const pulse = 0.09 + 0.05 * Math.sin(now * 0.005);
       ctx.fillStyle = rgba(PALETTE.yellow, pulse);
       ctx.beginPath();
@@ -925,8 +1013,9 @@ export class Renderer {
       }
     }
 
-    if (p.defId === 'portal') {
-      for (const x of [-62, 62]) {
+    if (p.defId === 'portal' && this.level < 2 && !reduced) {
+      const half = pieceLength(p) / 2;
+      for (const x of [-half, half]) {
         ctx.save();
         ctx.translate(x, 0);
         ctx.rotate(now * 0.0012 * (x < 0 ? 1 : -1));
@@ -940,17 +1029,23 @@ export class Renderer {
     }
 
     if (p.defId === 'fan') {
-      // Corrientes de aire: líneas finas que suben por la columna.
-      const off = (now * 0.06) % 48;
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      const off = reduced ? 0 : (now * 0.049) % 58;
+      const glow = p.flash ? clamp(1 - (now - p.flash) / 520, 0, 1) : 0;
+      ctx.strokeStyle = `rgba(242,255,253,${0.42 + glow * 0.43})`;
       ctx.lineWidth = 2;
       ctx.lineCap = 'round';
-      for (let i = -2; i <= 2; i++) {
-        const y = -96 + ((i * 48 + off + 192) % 192);
+      ctx.beginPath();
+      for (let i = 0; i < 3; i++) {
+        const y = 66 - (i * 58 + off);
+        ctx.moveTo(-20, y + 5);
+        ctx.quadraticCurveTo(0, y - 12, 20, y + 5);
+      }
+      ctx.stroke();
+      if (glow) {
+        ctx.fillStyle = `rgba(176,243,216,${glow * 0.42})`;
         ctx.beginPath();
-        ctx.moveTo(-25, y + 9);
-        ctx.quadraticCurveTo(0, y - 2, 25, y + 9);
-        ctx.stroke();
+        ctx.ellipse(0, 97, 40, 7, 0, 0, TAU);
+        ctx.fill();
       }
     }
 
@@ -998,19 +1093,20 @@ export class Renderer {
     m: Marble,
     alpha: number,
     now: number,
-    reduced: boolean
+    reduced: boolean,
+    inside = false
   ) {
     const type = MARBLE_BY_ID.get(m.typeId);
     if (!type) return;
     const x = m.awake ? lerp(m.px, m.x, alpha) : m.x;
     const y = m.awake ? lerp(m.py, m.y, alpha) : m.y;
-    const sway = m.bubbled ? Math.sin(now * 0.003 + m.id) * 2.5 : 0;
+    const sway = m.bubbled && !reduced ? Math.sin(now * 0.003 + m.id) * 2.5 : 0;
     const bx = x + sway;
     const air = clamp(m.airTime ?? 0, 0, 1.6);
     const lift = Math.min(1, air / 1.15);
 
     // Sombra proyectada: se separa y se aclara cuando la canica va por el aire.
-    if (!m.bubbled && this.level < 2) {
+    if (!inside && !m.bubbled && this.level < 2) {
       drawSoftShadow(
         ctx,
         x + 3.5 + lift * 7,
@@ -1021,11 +1117,11 @@ export class Renderer {
       );
     }
 
-    const speed = Math.hypot(m.vx, m.vy);
-    if (!reduced && speed > 760) {
+    if (!inside && !reduced && this.level === 0 && m.vx * m.vx + m.vy * m.vy > 760 ** 2) {
       // Motion blur barato: estelas de la propia esfera.
+      const speed = Math.hypot(m.vx, m.vy);
       const t = clamp((speed - 760) / 1400, 0, 1);
-      for (let i = 3; i >= 1; i--) {
+      for (let i = 2; i >= 1; i--) {
         const back = 0.011 * i;
         drawMarbleSprite(
           ctx,
@@ -1038,7 +1134,7 @@ export class Renderer {
       }
     }
 
-    if (type.premium && m.trail.length >= 4) {
+    if (!inside && !reduced && this.level < 2 && type.premium && m.trail.length >= 4) {
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       const pts = m.trail;
@@ -1053,7 +1149,7 @@ export class Renderer {
       }
     }
 
-    if (type.premium) {
+    if (!inside && this.level < 2 && type.premium) {
       const glow = 0.12 + 0.05 * Math.sin(now * 0.004 + m.id);
       ctx.fillStyle = rgba(type.glow ?? type.color, glow);
       ctx.beginPath();
@@ -1062,16 +1158,15 @@ export class Renderer {
     }
 
     const age = now - m.bornAt;
-    const grow = age >= 0 && age < 90 ? 0.35 + 0.65 * (age / 90) : 1;
+    const grow = !reduced && age >= 0 && age < 90 ? 0.45 + 0.55 * (age / 90) : 1;
     const rideScale = m.ridePiece ? m.rideScale : 1;
     // Al ir por el aire se agranda un poco: lee como altura, no como escala.
-    const airScale = 1 + lift * (0.1 + Math.min(0.08, air * 0.1));
+    const airScale = inside || reduced ? 1 : 1 + lift * 0.065;
     drawMarbleSprite(ctx, type, bx, y, m.r * grow * rideScale * airScale);
     if (m.bubbled) {
-      const pulse = 1 + 0.02 * Math.sin(now * 0.004 + m.id);
+      const pulse = reduced ? 1 : 1 + 0.02 * Math.sin(now * 0.004 + m.id);
       drawBubbleSprite(ctx, bx, y, m.r * 1.72 * pulse, 0.95);
-      drawBubbleSprite(ctx, bx - m.r * 1.25, y - m.r * 0.8, m.r * 0.22, 0.45);
-      drawBubbleSprite(ctx, bx + m.r * 1.2, y - m.r * 1.1, m.r * 0.15, 0.35);
+      if (this.level < 2) drawBubbleSprite(ctx, bx - m.r * 1.25, y - m.r * 0.8, m.r * 0.22, 0.45);
     }
   }
 
@@ -1094,12 +1189,32 @@ export class Renderer {
     ctx.strokeStyle = rgba(this.theme.ink, 0.25);
     ctx.lineWidth = 1.4 / zoom;
     ctx.beginPath();
-    ctx.moveTo(p.x, p.y - 110);
-    ctx.lineTo(p.x, p.y - 18);
+    ctx.moveTo(p.x, p.y + 26);
+    ctx.lineTo(p.x, p.y + 105);
     ctx.stroke();
     ctx.setLineDash([]);
     const type = MARBLE_BY_ID.get(this.game.selectedMarble);
     if (type) drawMarbleSprite(ctx, type, p.x, p.y, type.r, 0.55);
+    ctx.restore();
+  }
+
+  private drawJoint(ctx: CanvasRenderingContext2D, x: number, y: number, zoom: number, spread: number, opacity: number) {
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.beginPath();
+    ctx.arc(x, y, (9 + spread * 15) / zoom, 0, TAU);
+    ctx.strokeStyle = '#24485A';
+    ctx.lineWidth = 4.5 / zoom;
+    ctx.stroke();
+    ctx.strokeStyle = '#CFF4DA';
+    ctx.lineWidth = 2.5 / zoom;
+    ctx.stroke();
+    if (!spread) {
+      ctx.beginPath();
+      ctx.arc(x, y, 3 / zoom, 0, TAU);
+      ctx.fillStyle = '#E7FFE8';
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -1168,12 +1283,17 @@ export class Renderer {
     if (this.qualitySetting !== 'auto') return;
     if (now - this.lastCheck < 2200) return;
     this.lastCheck = now;
-    if (this.avgFrame > 30 && this.level < 2) {
+    if ((this.avgFrame > 24 || this.avgRender > 14) && this.level < 2) {
       this.setLevel(this.level + 1);
-    } else if (this.avgFrame > 22 && this.level < 1) {
-      this.setLevel(this.level + 1);
-    } else if (this.avgFrame < 14.5 && this.level > 0) {
-      this.setLevel(this.level - 1);
+      this.healthySince = 0;
+    } else if (this.avgFrame < 18.5 && this.avgRender < 6 && this.level > 0) {
+      if (!this.healthySince) this.healthySince = now;
+      if (now - this.healthySince > 6500) {
+        this.setLevel(this.level - 1);
+        this.healthySince = 0;
+      }
+    } else {
+      this.healthySince = 0;
     }
   }
 }

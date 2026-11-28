@@ -1,6 +1,9 @@
 import type { Collider, Marble, PhysEvent, Piece, Trigger } from './types';
-import { SPIRAL_DURATION, SPIRAL_ENTRY, buildPiece, pieceHitSize, spiralDepth, spiralLocal } from './pieces';
-import { clamp, TAU } from './util';
+import {
+  FAN_HALF, FAN_INTAKE_BOTTOM, FAN_INTAKE_TOP, FAN_OUTLET, FUNNEL_LEFT,
+  SPIRAL_DURATION, SPIRAL_ENTRY, buildPiece, funnelHalfWidthAt, pieceHitSize, spiralDepth, spiralLocal
+} from './pieces';
+import { clamp, lerp, TAU } from './util';
 
 const CELL = 64;
 const TRIGGER_CELL = 128;
@@ -11,6 +14,7 @@ const SLOP = 0.5;
 const BUBBLE_RISE = -190;
 const BUBBLE_LIFE = 8;
 const TRIGGER_PAD = 40;
+const NO_TRIGGERS: readonly number[] = [];
 
 interface SpiralInfo {
   pieceId: number;
@@ -42,7 +46,10 @@ export class PhysicsWorld {
   events: PhysEvent[] = [];
   private grid = new Map<number, number[]>();
   private triggerGrid = new Map<number, number[]>();
-  private triggerQuery: Trigger[] = [];
+  private fans = new Map<number, Trigger>();
+  private hasFunnels = false;
+  private hasFields = false;
+  private hasInteractions = false;
   private marbleGrid = new Map<number, number[]>();
   private marbleCells: number[] = [];
   private marblePool: number[][] = [];
@@ -60,6 +67,10 @@ export class PhysicsWorld {
     this.dynamicColliders = [];
     this.triggers = [];
     this.spirals = [];
+    this.fans.clear();
+    this.hasFunnels = false;
+    this.hasFields = false;
+    this.hasInteractions = false;
     for (const p of pieces) {
       const built = buildPiece(p);
       const target = p.defId === 'balance' ? this.dynamicColliders : this.colliders;
@@ -68,6 +79,10 @@ export class PhysicsWorld {
         const prev = disabled.get(`${t.kind}:${t.pieceId}`) ?? 0;
         if (prev > t.disabledUntil) t.disabledUntil = prev;
         this.triggers.push(t);
+        if (t.kind === 'fan') this.fans.set(t.pieceId, t);
+        else if (t.kind === 'funnel') this.hasFunnels = true;
+        else if (t.kind === 'boost' || t.kind === 'magnet') this.hasFields = true;
+        else this.hasInteractions = true;
       }
       if (p.defId === 'spiral') {
         this.spirals.push({ pieceId: p.id, x: p.x, y: p.y, rot: p.rot });
@@ -121,6 +136,7 @@ export class PhysicsWorld {
       }
     }
     this.stamp = 0;
+    this.visited.fill(0);
   }
 
   /** Recalcula solo las barras móviles, sin rehacer toda la rejilla. */
@@ -143,19 +159,30 @@ export class PhysicsWorld {
 
   clearDisabled() {
     this.disabled.clear();
+    for (const trigger of this.triggers) trigger.disabledUntil = 0;
   }
 
   /** Triggers cuya caja puede contener a la canica (consulta de una celda). */
-  private nearbyTriggers(m: Marble): Trigger[] {
-    const out = this.triggerQuery;
-    out.length = 0;
-    if (this.triggers.length === 0) return out;
-    const arr = this.triggerGrid.get(
-      cellKey(Math.floor(m.x / TRIGGER_CELL), Math.floor(m.y / TRIGGER_CELL))
-    );
-    if (!arr) return out;
-    for (let i = 0; i < arr.length; i++) out.push(this.triggers[arr[i]]);
-    return out;
+  private nearbyTriggers(x: number, y: number): readonly number[] {
+    return this.triggerGrid.get(cellKey(Math.floor(x / TRIGGER_CELL), Math.floor(y / TRIGGER_CELL))) ?? NO_TRIGGERS;
+  }
+
+  funnelAt(x: number, y: number, radius: number): number {
+    if (!this.hasFunnels) return 0;
+    const indices = this.nearbyTriggers(x, y);
+    for (let i = indices.length - 1; i >= 0; i--) {
+      const t = this.triggers[indices[i]];
+      if (t.kind !== 'funnel') continue;
+      const dx = x - t.x;
+      const dy = y - t.y;
+      const c = Math.cos(t.rot);
+      const s = Math.sin(t.rot);
+      const lx = dx * c + dy * s;
+      const ly = dy * c - dx * s;
+      if (ly < FUNNEL_LEFT[0].y - radius * 0.2 || ly > 94 + radius || Math.abs(lx) > t.w / 2) continue;
+      if (Math.abs(lx) <= funnelHalfWidthAt(t.w, ly) - 6) return t.pieceId;
+    }
+    return 0;
   }
 
   update(marbles: Marble[], dt: number, now: number) {
@@ -168,6 +195,10 @@ export class PhysicsWorld {
   private stepMarble(m: Marble, dt: number, now: number) {
     if (m.bubbled) {
       this.stepBubble(m, dt, now);
+      return;
+    }
+    if (m.fanRide) {
+      this.stepFan(m, m.fanRide, dt, now);
       return;
     }
     if (m.ridePiece) {
@@ -184,7 +215,7 @@ export class PhysicsWorld {
 
     for (let step = 0; step < steps; step++) {
       m.vy += GRAVITY * h;
-      if (this.triggers.length > 0) this.applyFields(m, h, now);
+      if (this.hasFields) this.applyFields(m, h, now);
       const sp = Math.hypot(m.vx, m.vy);
       if (sp > MAX_SPEED) {
         const k = MAX_SPEED / sp;
@@ -193,22 +224,11 @@ export class PhysicsWorld {
       }
       m.x += m.vx * h;
       m.y += m.vy * h;
+      if (this.fans.size && this.passFan(m, h, now)) return;
       this.resolveStatic(m, h, now);
     }
 
     if (m.contact) {
-      if (m.airTime > 1.2) {
-        this.events.push({
-          type: 'air',
-          x: m.x,
-          y: m.y,
-          pieceId: 0,
-          note: -1,
-          impact: m.airTime * 1000,
-          marbleId: m.id,
-          speed: Math.hypot(m.vx, m.vy)
-        });
-      }
       m.airTime = 0;
       const damp = Math.exp(-m.roll * dt * 0.55);
       m.vx *= damp;
@@ -217,7 +237,7 @@ export class PhysicsWorld {
       m.airTime += dt;
     }
 
-    if (this.triggers.length > 0) this.checkTriggers(m, now);
+    if (this.hasInteractions) this.checkTriggers(m, now);
 
     const sp2 = Math.hypot(m.vx, m.vy);
     if (sp2 < 22 && m.contact) {
@@ -229,6 +249,64 @@ export class PhysicsWorld {
       }
     } else {
       m.sleepTimer = 0;
+    }
+  }
+
+  private passFan(m: Marble, dt: number, now: number): boolean {
+    for (const index of this.nearbyTriggers(m.x, m.y)) {
+      const t = this.triggers[index];
+      if (t.kind !== 'fan' || (t.pieceId === m.lastFanPiece && now < m.fanReadyAt)) continue;
+      const c = -t.dy;
+      const s = t.dx;
+      const dx = m.x - t.x;
+      const dy = m.y - t.y;
+      const x = dx * c + dy * s;
+      const y = dy * c - dx * s;
+      if (Math.abs(x) > FAN_HALF + m.r * 0.35 || y < FAN_OUTLET + 9 || y > FAN_INTAKE_BOTTOM) continue;
+      if (y < FAN_INTAKE_TOP) {
+        // La corriente por encima de la toma desvía sin suspender una caída vertical.
+        m.vx += t.dx * t.power * dt * 0.35;
+        m.vy += t.dy * t.power * dt * 0.35;
+        continue;
+      }
+      const side = Math.abs(x) > 8 ? Math.sign(-x) : Math.sign(m.vx * c + m.vy * s) || (m.id % 2 ? 1 : -1);
+      m.fanRide = { pieceId: t.pieceId, t: 0, x, y, exitX: side * 16 };
+      m.vx = 0;
+      m.vy = 0;
+      m.contact = 0;
+      m.airTime = 0;
+      m.sleepTimer = 0;
+      m.trail.length = 0;
+      this.events.push({ type: 'fan', x: m.x, y: m.y, pieceId: t.pieceId, note: -1, impact: 0, marbleId: m.id, speed: 0 });
+      return true;
+    }
+    return false;
+  }
+
+  private stepFan(m: Marble, ride: NonNullable<Marble['fanRide']>, dt: number, now: number) {
+    const fan = this.fans.get(ride.pieceId);
+    if (!fan) {
+      m.fanRide = undefined;
+      return;
+    }
+    ride.t = Math.min(1, ride.t + dt / 0.63);
+    const entry = Math.min(1, ride.t / 0.28);
+    const rise = clamp((ride.t - 0.16) / 0.84, 0, 1);
+    const x = lerp(ride.x, 0, entry * (2 - entry)) + rise ** 3 * ride.exitX;
+    const y = lerp(Math.min(ride.y, 100), FAN_OUTLET, rise * (0.18 + rise * 0.82)) + (1 - entry) * Math.max(0, ride.y - 100);
+    const c = -fan.dy;
+    const s = fan.dx;
+    m.px = m.x;
+    m.py = m.y;
+    m.x = fan.x + x * c - y * s;
+    m.y = fan.y + x * s + y * c;
+    if (ride.t === 1) {
+      m.fanRide = undefined;
+      m.lastFanPiece = fan.pieceId;
+      m.fanReadyAt = now + 900;
+      const sideways = Math.sign(ride.exitX) * 145;
+      m.vx = sideways * c + fan.dx * 690;
+      m.vy = sideways * s + fan.dy * 690;
     }
   }
 
@@ -302,31 +380,44 @@ export class PhysicsWorld {
     m.airTime = 0;
     m.sleepTimer = 0;
     m.awake = true;
-    if (this.triggers.length > 0) this.applyFields(m, dt, now);
-    if (this.triggers.length > 0) this.checkTriggers(m, now);
-    if (m.bubbled && m.bubbleT > 0.3 && this.bubbleTouchesSolid(m)) this.popBubble(m);
-    if (m.bubbled && m.bubbleT > BUBBLE_LIFE) this.popBubble(m);
+    if (this.fans.size) this.applyFields(m, dt, now);
+    if (m.bubbleT > BUBBLE_LIFE || (m.bubbleT > 0.3 && this.bubbleTouchesSolid(m, now))) this.popBubble(m, now);
   }
 
-  private bubbleTouchesSolid(m: Marble): boolean {
+  private bubbleTouchesSolid(m: Marble, now: number): boolean {
     const bubbleR = m.r * 1.55;
-    for (const list of [this.colliders, this.dynamicColliders]) {
-      for (const c of list) {
-        const p = closestOnSegment(m.x, m.y, c.ax, c.ay, c.bx, c.by);
-        const dx = m.x - p.x;
-        const dy = m.y - p.y;
-        const rr = c.r + bubbleR;
-        if (dx * dx + dy * dy <= rr * rr) return true;
+    const x0 = Math.floor((m.x - bubbleR) / CELL);
+    const x1 = Math.floor((m.x + bubbleR) / CELL);
+    const y0 = Math.floor((m.y - bubbleR) / CELL);
+    const y1 = Math.floor((m.y + bubbleR) / CELL);
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y1; y++) {
+        const indices = this.grid.get(cellKey(x, y));
+        if (!indices) continue;
+        for (const i of indices) {
+          if (this.overlapsBubble(m, this.colliders[i], bubbleR, now)) return true;
+        }
       }
+    }
+    for (const c of this.dynamicColliders) {
+      if (this.overlapsBubble(m, c, bubbleR, now)) return true;
     }
     return false;
   }
 
-  private popBubble(m: Marble) {
+  private overlapsBubble(m: Marble, c: Collider, r: number, now: number): boolean {
+    if ((this.disabled.get(c.pieceId) ?? 0) > now) return false;
+    const p = closestOnSegment(m.x, m.y, c.ax, c.ay, c.bx, c.by);
+    const dx = m.x - p.x;
+    const dy = m.y - p.y;
+    return dx * dx + dy * dy <= (c.r + r) ** 2;
+  }
+
+  private popBubble(m: Marble, now: number) {
     if (!m.bubbled) return;
     m.bubbled = false;
     m.bubbleT = 0;
-    m.bubbleReadyAt = performance.now() + 1200;
+    m.bubbleReadyAt = now + 1200;
     m.vy = Math.max(60, m.vy * 0.2);
     m.vx *= 0.7;
     m.awake = true;
@@ -345,9 +436,9 @@ export class PhysicsWorld {
   }
 
   private applyFields(m: Marble, h: number, now: number) {
-    const triggers = this.nearbyTriggers(m);
+    const triggers = this.nearbyTriggers(m.x, m.y);
     for (let ti = 0; ti < triggers.length; ti++) {
-      const t = triggers[ti];
+      const t = this.triggers[triggers[ti]];
       if (m.bubbled) {
         if (t.kind === 'fan' && this.inTriggerRect(m, t)) {
           m.vx += t.dx * t.power * h * 0.45;
@@ -385,16 +476,6 @@ export class PhysicsWorld {
             speed: sp
           });
         }
-      } else if (t.kind === 'fan') {
-        if (!this.inTriggerRect(m, t)) continue;
-        m.vx += t.dx * t.power * h;
-        m.vy += t.dy * t.power * h;
-        const sp = Math.hypot(m.vx, m.vy);
-        if (sp > 3300) {
-          const k = 3300 / sp;
-          m.vx *= k;
-          m.vy *= k;
-        }
       } else if (t.kind === 'magnet') {
         const dx = t.x - m.x;
         const dy = t.y - m.y;
@@ -418,9 +499,9 @@ export class PhysicsWorld {
 
   private checkTriggers(m: Marble, now: number) {
     if (m.bubbled) return;
-    const triggers = this.nearbyTriggers(m);
+    const triggers = this.nearbyTriggers(m.x, m.y);
     for (let ti = 0; ti < triggers.length; ti++) {
-      const t = triggers[ti];
+      const t = this.triggers[triggers[ti]];
       if (t.disabledUntil > now) continue;
       if (t.kind === 'goal') {
         if (this.inTriggerRect(m, t) || this.inTriggerCircle(m, t)) {
@@ -631,9 +712,10 @@ export class PhysicsWorld {
     const p = closestOnSegment(m.x, m.y, c.ax, c.ay, c.bx, c.by);
     let nx = m.x - p.x;
     let ny = m.y - p.y;
-    const d = Math.hypot(nx, ny);
+    const d2 = nx * nx + ny * ny;
     const min = m.r + c.r;
-    if (d >= min) return;
+    if (d2 >= min * min) return;
+    const d = Math.sqrt(d2);
 
     if (d < 0.0001) {
       const dx = c.bx - c.ax;
@@ -730,10 +812,16 @@ export class PhysicsWorld {
         speed: Math.hypot(m.vx, m.vy)
       });
     }
+    if (impact > 150 && !c.bumper && !c.chime && !c.cannon) {
+      this.events.push({
+        type: 'contact', x: m.x, y: m.y, pieceId: c.pieceId, note: -1, impact,
+        marbleId: m.id, speed: 0, material: c.mat
+      });
+    }
   }
 
   private collideMarblePair(a: Marble, b: Marble, now: number): boolean {
-    if (!a.alive || !b.alive || a.bubbled || b.bubbled) return false;
+    if (!a.alive || !b.alive || a.bubbled || b.bubbled || a.fanRide || b.fanRide || a.ridePiece || b.ridePiece) return false;
     if (!a.awake && !b.awake) return true;
     let dx = b.x - a.x;
     let dy = b.y - a.y;
@@ -838,7 +926,7 @@ export class PhysicsWorld {
     this.marbleCells.length = 0;
     for (let i = 0; i < marbles.length; i++) {
       const m = marbles[i];
-      if (!m.alive || m.bubbled) continue;
+      if (!m.alive || m.bubbled || m.fanRide || m.ridePiece) continue;
       const key = cellKey(Math.floor(m.x / MARBLE_CELL), Math.floor(m.y / MARBLE_CELL));
       let arr = this.marbleGrid.get(key);
       if (!arr) {
@@ -855,10 +943,10 @@ export class PhysicsWorld {
     if (n < 32) {
       for (let i = 0; i < n; i++) {
         const a = marbles[i];
-        if (!a.alive || a.bubbled) continue;
+        if (!a.alive || a.bubbled || a.fanRide || a.ridePiece) continue;
         for (let j = i + 1; j < n; j++) {
           const b = marbles[j];
-          if (!b.alive || b.bubbled) continue;
+          if (!b.alive || b.bubbled || b.fanRide || b.ridePiece) continue;
           if (!this.collideMarblePair(a, b, now)) break;
         }
       }
@@ -867,7 +955,7 @@ export class PhysicsWorld {
     this.rebuildMarbleGrid(marbles);
     for (let i = 0; i < n; i++) {
       const a = marbles[i];
-      if (!a.alive || a.bubbled) continue;
+      if (!a.alive || a.bubbled || a.fanRide || a.ridePiece) continue;
       const cx = Math.floor(a.x / MARBLE_CELL);
       const cy = Math.floor(a.y / MARBLE_CELL);
       let stop = false;
@@ -879,7 +967,7 @@ export class PhysicsWorld {
             const b = marbles[arr[k]];
             // Solo procesamos cada pareja una vez y en una sola dirección.
             if (b.id <= a.id) continue;
-            if (!b.alive || b.bubbled) continue;
+            if (!b.alive) continue;
             if (!this.collideMarblePair(a, b, now)) {
               stop = true;
               break;
@@ -955,6 +1043,8 @@ export function createMarble(
     rideNextChime: 0,
     rideScale: 1,
     rideDepth: 0,
+    lastFanPiece: 0,
+    fanReadyAt: 0,
     bubbled: false,
     bubbleT: 0,
     bubbleReadyAt: 0

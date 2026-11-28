@@ -4,7 +4,6 @@ import type {
   MaterialId,
   Piece,
   PieceDef,
-  ShopItem,
   Trigger,
   Vec2
 } from './types';
@@ -55,7 +54,6 @@ export const MARBLE_TYPES: MarbleType[] = [
   {
     id: 'crystal',
     label: 'Canica de cristal',
-    price: 0,
     r: 22.95,
     density: 1,
     e: 0.45,
@@ -66,7 +64,6 @@ export const MARBLE_TYPES: MarbleType[] = [
   {
     id: 'rubber',
     label: 'Canica de goma',
-    price: 250,
     r: 24.225,
     density: 0.85,
     e: 0.82,
@@ -77,7 +74,6 @@ export const MARBLE_TYPES: MarbleType[] = [
   {
     id: 'steel',
     label: 'Canica de acero',
-    price: 600,
     r: 21.675,
     density: 2.6,
     e: 0.25,
@@ -88,7 +84,6 @@ export const MARBLE_TYPES: MarbleType[] = [
   {
     id: 'comet',
     label: 'Canica cometa',
-    price: 1500,
     r: 22.95,
     density: 1,
     e: 0.4,
@@ -101,7 +96,6 @@ export const MARBLE_TYPES: MarbleType[] = [
   {
     id: 'plasma',
     label: 'Canica plasma',
-    price: 2500,
     r: 22.95,
     density: 0.9,
     e: 0.5,
@@ -114,7 +108,6 @@ export const MARBLE_TYPES: MarbleType[] = [
   {
     id: 'rainbow',
     label: 'Canica arcoíris',
-    price: 0,
     r: 22.95,
     density: 1,
     e: 0.5,
@@ -127,7 +120,6 @@ export const MARBLE_TYPES: MarbleType[] = [
   {
     id: 'surprise',
     label: 'Canica sorpresa',
-    price: 0,
     r: 22.95,
     density: 1,
     e: 0.5,
@@ -275,6 +267,17 @@ export const RAMP_CURVE_RADIUS = 100;
 export const RAMP_CURVE_START = P;
 export const RAMP_CURVE_END = 1.5 * P;
 
+/** Pista descendente con tangentes horizontales en ambos extremos. */
+export const S_TRACK = Array.from({ length: 17 }, (_, i) => {
+  const t = i / 16;
+  return { x: -120 + 240 * t, y: -40 * Math.cos(Math.PI * t) };
+});
+
+export const FAN_HALF = 52;
+export const FAN_INTAKE_TOP = 54;
+export const FAN_INTAKE_BOTTOM = 116;
+export const FAN_OUTLET = -108;
+
 export function xyloLayout(count: number): { widths: number[]; xs: number[]; total: number } {
   const widths: number[] = [];
   for (let i = 0; i < count; i++) widths.push(88 - i * 4);
@@ -294,11 +297,10 @@ export const FUNNEL_LEFT: Vec2[] = [
   { x: -88, y: -52 },
   { x: -76, y: -20 },
   { x: -60, y: 14 },
-  { x: -44, y: 42 },
-  { x: -34, y: 64 },
-  { x: -36, y: 84 }
+  { x: -46, y: 42 },
+  { x: -41, y: 64 },
+  { x: -40, y: 84 }
 ];
-export const FUNNEL_RIGHT: Vec2[] = FUNNEL_LEFT.map((p) => ({ x: -p.x, y: p.y }));
 
 /** Anchura total de la boca del embudo sin extender. */
 export const FUNNEL_TOP_WIDTH = 188;
@@ -306,18 +308,30 @@ export const FUNNEL_TOP_WIDTH = 188;
 export const FUNNEL_WIDTHS = [FUNNEL_TOP_WIDTH, 260, 340, 440, 560];
 const FUNNEL_NECK_Y = 42;
 
+function funnelWidthAtPoint(index: number, len: number): number {
+  const pt = FUNNEL_LEFT[index];
+  const spread = clamp((FUNNEL_NECK_Y - pt.y) / (FUNNEL_NECK_Y - FUNNEL_LEFT[0].y), 0, 1);
+  return -pt.x * (1 + (Math.max(1, len / FUNNEL_TOP_WIDTH) - 1) * spread);
+}
+
+export function funnelHalfWidthAt(len: number, y: number): number {
+  for (let i = 1; i < FUNNEL_LEFT.length; i++) {
+    const b = FUNNEL_LEFT[i];
+    if (y > b.y) continue;
+    const a = FUNNEL_LEFT[i - 1];
+    const t = Math.max(0, (y - a.y) / (b.y - a.y));
+    return funnelWidthAtPoint(i - 1, len) * (1 - t) + funnelWidthAtPoint(i, len) * t;
+  }
+  return -FUNNEL_LEFT[FUNNEL_LEFT.length - 1].x;
+}
+
 /**
  * Geometría del embudo. Al extenderlo solo se abre la parte alta: el cuello y
  * la salida inferior conservan su tamaño original.
  */
 export function funnelLayout(p?: { len: number }): { left: Vec2[]; right: Vec2[] } {
-  const width = p && p.len > 0 ? p.len : FUNNEL_TOP_WIDTH;
-  const k = Math.max(1, width / FUNNEL_TOP_WIDTH);
-  const topY = FUNNEL_LEFT[0].y;
-  const left = FUNNEL_LEFT.map((pt) => {
-    const w = clamp((FUNNEL_NECK_Y - pt.y) / (FUNNEL_NECK_Y - topY), 0, 1);
-    return { x: pt.x * (1 + (k - 1) * w), y: pt.y };
-  });
+  const len = p?.len || FUNNEL_TOP_WIDTH;
+  const left = FUNNEL_LEFT.map((pt, i) => ({ x: -funnelWidthAtPoint(i, len), y: pt.y }));
   return { left, right: left.map((pt) => ({ x: -pt.x, y: pt.y })) };
 }
 
@@ -334,17 +348,13 @@ export interface PieceBaseMount {
 
 const BASE_MOUNTS: Record<string, PieceBaseMount> = {
   bubbleLift: { halfWidth: 38, bottom: 68, top: 54, lip: 34 },
-  fan: { halfWidth: 52, bottom: 108, top: 88, lip: 42 },
+  fan: { halfWidth: FAN_HALF, bottom: 108, top: 88, lip: 0 },
   cannon: { halfWidth: 40, bottom: 22, top: 6, lip: 40 },
   hourglass: { halfWidth: 34, bottom: 62, top: 50, lip: 30 }
 };
 
 export function pieceBaseMount(defId: string): PieceBaseMount | null {
   return BASE_MOUNTS[defId] ?? null;
-}
-
-export function hasMagneticBase(defId: string): boolean {
-  return defId in BASE_MOUNTS;
 }
 
 /** Longitud efectiva de una pieza extensible (con compatibilidad para saves). */
@@ -382,8 +392,6 @@ export const FACTORY_LAMP = { x: 30, y: -6 };
 const defs: PieceDef[] = [
   {
     id: 'ramp',
-    category: 'build',
-    price: 0,
     label: 'Rampa',
     w: 320,
     h: 20,
@@ -397,8 +405,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'rampCurve',
-    category: 'build',
-    price: 250,
     label: 'Rampa curva',
     w: 200,
     h: 200,
@@ -411,9 +417,24 @@ const defs: PieceDef[] = [
     }
   },
   {
+    id: 'sTrack',
+    label: 'Canal en S',
+    w: 260,
+    h: 108,
+    tintable: true,
+    defaultColor: 3,
+    build: (p) => {
+      const colliders: Collider[] = [];
+      for (let i = 1; i < S_TRACK.length; i++) {
+        const a = S_TRACK[i - 1];
+        const b = S_TRACK[i];
+        addCap(colliders, p, a.x, a.y, b.x, b.y, 8, 'brick', { e: 0.18 });
+      }
+      return { colliders, triggers: [] };
+    }
+  },
+  {
     id: 'balance',
-    category: 'build',
-    price: 500,
     label: 'Balancín',
     w: 280,
     h: 64,
@@ -427,8 +448,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'funnel',
-    category: 'build',
-    price: 550,
     label: 'Embudo',
     w: 210,
     h: 180,
@@ -439,18 +458,21 @@ const defs: PieceDef[] = [
       const { left, right } = funnelLayout(p);
       const addCurve = (pts: Vec2[]) => {
         for (let i = 0; i < pts.length - 1; i++) {
-          addCap(c, p, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, 6, 'brick');
+          addCap(c, p, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, 6, 'brick', { e: 0.14 });
         }
       };
       addCurve(left);
       addCurve(right);
-      return { colliders: c, triggers: [] };
+      return {
+        colliders: c,
+        triggers: [
+          { kind: 'funnel', x: p.x, y: p.y, w: pieceLength(p), h: 224, r: 0, rot: p.rot, power: 0, pieceId: p.id, disabledUntil: 0, dx: 0, dy: 0, pairId: 0 }
+        ]
+      };
     }
   },
   {
     id: 'conveyor',
-    category: 'build',
-    price: 850,
     label: 'Cinta transportadora',
     w: 360,
     h: 24,
@@ -468,8 +490,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'bumper',
-    category: 'energy',
-    price: 800,
     label: 'Parachoques',
     w: 60,
     h: 60,
@@ -483,8 +503,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'booster',
-    category: 'energy',
-    price: 600,
     label: 'Propulsor',
     w: 80,
     h: 80,
@@ -516,8 +534,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'cannon',
-    category: 'energy',
-    price: 900,
     label: 'Cañón',
     w: 100,
     h: 60,
@@ -553,8 +569,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'star',
-    category: 'energy',
-    price: 350,
     label: 'Estrella',
     w: 48,
     h: 48,
@@ -583,8 +597,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'goal',
-    category: 'energy',
-    price: 0,
     label: 'Campana',
     w: 120,
     h: 120,
@@ -613,8 +625,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'spiral',
-    category: 'build',
-    price: 0,
     label: 'Caída en espiral',
     w: 280,
     h: 320,
@@ -646,8 +656,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'bubble',
-    category: 'build',
-    price: 0,
     label: 'Rampa-burbuja',
     w: 240,
     h: 26,
@@ -662,8 +670,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'bubbleLift',
-    category: 'energy',
-    price: 0,
     label: 'Fábrica de burbujas',
     w: 140,
     h: 160,
@@ -697,8 +703,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'marbleFactory',
-    category: 'energy',
-    price: 0,
     label: 'Fábrica de canicas',
     w: 140,
     h: 170,
@@ -713,8 +717,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'portal',
-    category: 'energy',
-    price: 0,
     label: 'Portales',
     w: 240,
     h: 100,
@@ -735,29 +737,23 @@ const defs: PieceDef[] = [
   },
   {
     id: 'fan',
-    category: 'energy',
-    price: 0,
     label: 'Ventilador',
     w: 110,
     h: 220,
     tintable: false,
     defaultColor: 0,
     build: (p) => {
-      const c: Collider[] = [];
-      addBaseMount(c, p);
       const up = dir(p, 0, -1);
       return {
-        colliders: c,
+        colliders: [],
         triggers: [
-          { kind: 'fan', x: p.x, y: p.y, w: 96, h: 200, r: 0, rot: p.rot, power: 3400, pieceId: p.id, disabledUntil: 0, dx: up.x, dy: up.y, pairId: 0 }
+          { kind: 'fan', x: p.x, y: p.y, w: FAN_HALF * 2, h: 232, r: 0, rot: p.rot, power: 3400, pieceId: p.id, disabledUntil: 0, dx: up.x, dy: up.y, pairId: 0 }
         ]
       };
     }
   },
   {
     id: 'electromagnet',
-    category: 'energy',
-    price: 900,
     label: 'Electroimán',
     w: 96,
     h: 96,
@@ -777,8 +773,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'hourglass',
-    category: 'energy',
-    price: 700,
     label: 'Reloj de arena',
     w: 96,
     h: 132,
@@ -797,8 +791,6 @@ const defs: PieceDef[] = [
   },
   {
     id: 'xylo5',
-    category: 'music',
-    price: 650,
     label: 'Xilófono de 5 notas',
     w: 440,
     h: 64,
@@ -819,7 +811,6 @@ const defs: PieceDef[] = [
   }
 ];
 
-export const PIECES: PieceDef[] = defs;
 export const PIECE_BY_ID = new Map(defs.map((d) => [d.id, d]));
 
 export function getPieceDef(id: string): PieceDef {
@@ -895,6 +886,11 @@ export function piecePorts(p: Piece): PiecePort[] {
     const tb = { x: -Math.sin(RAMP_CURVE_END), y: Math.cos(RAMP_CURVE_END) };
     add(a.x, a.y, -ta.x, -ta.y);
     add(b.x, b.y, tb.x, tb.y);
+  } else if (p.defId === 'sTrack') {
+    const a = S_TRACK[0];
+    const b = S_TRACK[S_TRACK.length - 1];
+    add(a.x, a.y, -1, 0);
+    add(b.x, b.y, 1, 0);
   } else if (p.defId === 'bubbleLift') {
     add(-48, 0, -1, 0);
     add(48, 0, 1, 0);
@@ -918,9 +914,12 @@ export function piecePorts(p: Piece): PiecePort[] {
     add(a.x, a.y, -ta.x / la, -ta.y / la);
     add(b.x, b.y, tb.x / lb, tb.y / lb);
   } else if (p.defId === 'funnel') {
-    const { left, right } = funnelLayout(p);
-    add(left[0].x, left[0].y, 0, -1);
-    add(right[0].x, right[0].y, 0, -1);
+    const half = pieceLength(p) / 2;
+    const y = FUNNEL_LEFT[0].y;
+    add(-half, y, 0, -1);
+    add(half, y, 0, -1);
+    add(-half * 0.66, y - 10, -1, 0);
+    add(half * 0.66, y - 10, 1, 0);
   }
   return out;
 }
@@ -951,38 +950,11 @@ export function pieceCorners(p: Piece): Vec2[] {
   ];
 }
 
-export const SHOP_ITEMS: ShopItem[] = [
-  { id: 'ramp', category: 'build', price: 0, label: 'Rampa', kind: 'piece' },
-  { id: 'rampCurve', category: 'build', price: 250, label: 'Rampa curva', kind: 'piece' },
-  { id: 'balance', category: 'build', price: 500, label: 'Balancín', kind: 'piece' },
-  { id: 'funnel', category: 'build', price: 550, label: 'Embudo', kind: 'piece' },
-  { id: 'conveyor', category: 'build', price: 850, label: 'Cinta', kind: 'piece' },
-  { id: 'spiral', category: 'build', price: 0, label: 'Caída en espiral', kind: 'piece' },
-  { id: 'bubble', category: 'build', price: 0, label: 'Rampa-burbuja', kind: 'piece' },
-  { id: 'bubbleLift', category: 'energy', price: 0, label: 'Fábrica de burbujas', kind: 'piece' },
-  { id: 'marbleFactory', category: 'energy', price: 0, label: 'Fábrica de canicas', kind: 'piece' },
-  { id: 'portal', category: 'energy', price: 0, label: 'Portales', kind: 'piece' },
-  { id: 'fan', category: 'energy', price: 0, label: 'Ventilador', kind: 'piece' },
-  { id: 'electromagnet', category: 'energy', price: 900, label: 'Electroimán', kind: 'piece' },
-  { id: 'hourglass', category: 'energy', price: 700, label: 'Reloj de arena', kind: 'piece' },
-  { id: 'xylo5', category: 'music', price: 650, label: 'Xilófono 5', kind: 'piece' },
-  { id: 'booster', category: 'energy', price: 600, label: 'Propulsor', kind: 'piece' },
-  { id: 'cannon', category: 'energy', price: 900, label: 'Cañón', kind: 'piece' },
-  { id: 'bumper', category: 'energy', price: 800, label: 'Parachoques', kind: 'piece' },
-  { id: 'star', category: 'energy', price: 350, label: 'Estrella', kind: 'piece' },
-  { id: 'goal', category: 'energy', price: 0, label: 'Campana', kind: 'piece' },
-  { id: 'crystal', category: 'marbles', price: 0, label: 'Canica de cristal', kind: 'marble' },
-  { id: 'rubber', category: 'marbles', price: 250, label: 'Canica de goma', kind: 'marble' },
-  { id: 'steel', category: 'marbles', price: 600, label: 'Canica de acero', kind: 'marble' },
-  { id: 'comet', category: 'marbles', price: 1500, label: 'Canica cometa', kind: 'marble' },
-  { id: 'plasma', category: 'marbles', price: 2500, label: 'Canica plasma', kind: 'marble' },
-  { id: 'rainbow', category: 'marbles', price: 0, label: 'Canica arcoíris', kind: 'marble' },
-  { id: 'surprise', category: 'marbles', price: 0, label: 'Canica sorpresa', kind: 'marble' }
-];
-
-export const STARTING_OWNED = SHOP_ITEMS.map((i) => i.id);
-
-export const SHOP_BY_ID = new Map(SHOP_ITEMS.map((i) => [i.id, i]));
+export const PIECE_TRAY = [
+  'ramp', 'rampCurve', 'sTrack', 'balance', 'funnel', 'conveyor', 'spiral', 'bubble',
+  'bubbleLift', 'marbleFactory', 'portal', 'fan', 'electromagnet', 'hourglass', 'xylo5',
+  'booster', 'cannon', 'bumper', 'star', 'goal'
+].map(getPieceDef);
 
 export function noteFrequency(note: number): number {
   return [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25][note] ?? 261.63;

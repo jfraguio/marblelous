@@ -20,11 +20,13 @@ La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al do
 - Las rampas y cintas son algo más gruesas y tienen una zona de toque generosa: se pueden agarrar un poco por encima o por debajo de la barra para moverlas.
 - Cambia a la canica y toca el lienzo para soltar una; mantén pulsado para hacer lluvia.
 - Dos dedos para mover y hacer zoom. Los botones **+** y **−**, bajo el botón de centrar, acercan y alejan el lienzo.
-- Todas las piezas y canicas están disponibles desde el principio. No hay tienda.
-- En Ajustes > Mundos puedes cambiar entre cinco escenarios con fondos detallados: Normal, Fondo marino, Cielo, Espacio y Volcán.
+- Todas las piezas y canicas están disponibles desde el principio. No hay puntos, récords ni tienda.
+- La barra superior permite deshacer y rehacer, pausar la simulación mientras construyes (`P` con teclado) y retirar solo las canicas.
+- En Ajustes > Mundos puedes cambiar el fondo de tu circuito: Normal, Fondo marino, Cielo, Espacio, Volcán y Jardín.
 - La **Fábrica de burbujas** atrapa la canica en un aro de jabón y la hace flotar. El **Ventilador** puede desviarla y la burbuja estalla al tocar cualquier pieza, lo que permite crear tramos aéreos. Si la canica azul entra en una burbuja, todas las canicas azules del lienzo se meten en burbuja a la vez.
 - La **Fábrica de canicas** produce una canica por segundo mientras está encendida, del mismo tipo que la canica seleccionada en la bandeja. Su lucecita es verde cuando funciona y roja cuando está apagada; se cambia con el botón de encendido al seleccionarla o tocándola en modo Jugar. La canica sale por su boca inferior y cae con la gravedad.
-- Los extremos de las rampas, curvas, embudos, cintas, espirales, fábricas de burbujas y ventiladores se **imantan** al acercarlos, sin cambiar su rotación. Los **propulsores** se pegan a cualquier punto de una rampa o cinta y quedan suspendidos justo encima de la pista.
+- Los extremos compatibles se **imantan** al acercarlos, sin cambiar su rotación. Un anillo marca la unión en la vista previa y un clic confirma el encaje. El **Canal en S** enlaza dos tramos a distinta altura. Los **propulsores** se pegan a la pista y quedan suspendidos justo encima.
+- El **Ventilador** toma las canicas por los lados de la base y las eleva por su tubo. En el **Embudo**, las canicas ruedan tras el cristal y salen por el cuello; puedes ensanchar la boca sin cambiar la salida.
 - El **Balancín** se inclina hacia el lado donde cae la canica: si el peso es suficiente, la hace rodar y caer por ese extremo.
 - El **Electroimán** atrae o repele las canicas cercanas. Se cambia de polaridad con el botón de imán al seleccionarlo o tocándolo directamente en modo Jugar; las canicas de acero responden con mucha más fuerza.
 - La **canica plasma** (violeta) se parte en dos al caer en un **cañón**: las dos mitades salen disparadas hacia arriba.
@@ -32,16 +34,17 @@ La URL de GitHub Pages (`https://jfraguio.github.io/marblelous/`) redirige al do
 - La **Rampa-burbuja** es una placa de hielo quebradizo: aguanta un instante y se rompe bajo el peso de una canica.
 - La **Canica sorpresa** sale como un círculo con `?` en la bandeja: al lanzarla aparece una canica aleatoria de entre todas.
 - La **Canica arcoíris** tiene un 10% de posibilidades de hacer explotar a cualquier canica con la que choque. Esas explosiones lanzan fuegos artificiales el triple de grandes.
-- El sonido está siempre activado; no hay control de volumen.
+- En Ajustes puedes elegir sonido **Normal**, **Suave** o **Silencio**. La calidad **Automática** se adapta al dispositivo; **Ligera** reduce la resolución, las sombras y las estelas y limita el dibujo a unos 30 fotogramas por segundo.
 - Los portales pueden separar sus dos agujeros con el botón de tamaño.
 - En ajustes, “Borrar” vacía el escenario actual; puedes deshacerlo. Cada borrado guarda la partida en una cola de las 5 últimas, accesible desde Ajustes > Partidas (1 a 5).
-- En Ajustes > Estructuras hay cinco composiciones densas ya montadas (La Cascada, El Vórtice, La Orquesta, La Factoría y Las Constelaciones). Al elegir una se carga en el lienzo y la partida anterior se guarda en Partidas.
+- En Ajustes > Estructuras puedes probar seis circuitos. **La Brisa** muestra cómo combinar el embudo, el Canal en S y el ventilador para llevar canicas al xilófono. Al elegir una estructura, la partida anterior se guarda en Partidas.
 
 ## Desarrollo
 
 ```bash
 npm install
 npm run dev
+npm test
 npm run build
 npm run preview
 ```
